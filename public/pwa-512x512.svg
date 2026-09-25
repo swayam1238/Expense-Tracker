@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4f46e5"/>
+      <stop offset="50%" stop-color="#7c3aed"/>
+      <stop offset="100%" stop-color="#06b6d4"/>
+    </linearGradient>
+    <linearGradient id="cardGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.25"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0.05"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="16" stdDeviation="24" flood-color="#000000" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+  <rect width="512" height="512" rx="128" fill="url(#bgGrad)"/>
+  <circle cx="256" cy="256" r="180" fill="url(#cardGrad)" stroke="rgba(255,255,255,0.2)" stroke-width="2"/>
+  <g filter="url(#shadow)">
+    <!-- Wallet / Card Icon -->
+    <rect x="136" y="166" width="240" height="180" rx="24" fill="#0f172a" stroke="#38bdf8" stroke-width="4"/>
+    <path d="M 136 216 L 376 216" stroke="#334155" stroke-width="4"/>
+    <!-- Card Chip / Glow -->
+    <rect x="166" y="246" width="44" height="34" rx="8" fill="#fbbf24"/>
+    <!-- Flow arrow / surge -->
+    <path d="M 270 286 L 300 256 L 330 286" stroke="#10b981" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+    <line x1="300" y1="256" x2="300" y2="310" stroke="#10b981" stroke-width="6" stroke-linecap="round"/>
+    <circle cx="330" cy="230" r="12" fill="#38bdf8"/>
+  </g>
+</svg>
