@@ -4,7 +4,10 @@ import {
   loginWithGoogle, 
   loginWithEmail, 
   registerWithEmail, 
-  isFirebaseConfigured 
+  isFirebaseConfigured,
+  isAllowedUser,
+  logoutUser,
+  ALLOWED_EMAIL
 } from '../firebase';
 import { 
   X, 
@@ -46,10 +49,18 @@ export const AuthModal = () => {
       } else {
         credential = await loginWithEmail(email, password);
       }
+      if (!isAllowedUser(credential.user)) {
+        await logoutUser();
+        throw new Error(email.toLowerCase() === ALLOWED_EMAIL
+          ? 'Check your email and verify the account before signing in.'
+          : `Only ${ALLOWED_EMAIL} can access this app.`);
+      }
       await syncLocalDataToCloud(credential.user);
       handleClose();
     } catch (err) {
-      setError(err.message || 'Authentication failed. Please check your credentials.');
+      setError(err.code === 'auth/invalid-credential'
+        ? 'Sign-in failed. Check the email and password.'
+        : (err.message || 'Authentication failed.'));
     } finally {
       setLoading(false);
     }
@@ -60,6 +71,10 @@ export const AuthModal = () => {
     setLoading(true);
     try {
       const credential = await loginWithGoogle();
+      if (!isAllowedUser(credential.user)) {
+        await logoutUser();
+        throw new Error(`Only ${ALLOWED_EMAIL} can access this app.`);
+      }
       await syncLocalDataToCloud(credential.user);
       handleClose();
     } catch (err) {

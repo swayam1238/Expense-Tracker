@@ -104,7 +104,7 @@ export const CategoriesView = () => {
       </div>
 
       {/* Categories Grid */}
-      <div style={{
+      <div className="categories-grid" style={{
         display: 'grid',
         gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
         gap: '14px'

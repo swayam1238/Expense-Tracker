@@ -7,7 +7,6 @@ import {
   Cloud, 
   Download, 
   Upload, 
-  RotateCcw, 
   Trash2, 
   Smartphone, 
   ShieldCheck, 
@@ -38,7 +37,6 @@ export const SettingsView = () => {
     exportToJSON, 
     exportToCSV, 
     importFromJSON, 
-    resetToSampleData, 
     clearAllData,
     expenses,
     categories
@@ -71,12 +69,6 @@ export const SettingsView = () => {
     }
   };
 
-  const handleResetSample = () => {
-    if (window.confirm('Reset data to initial sample expenses and default categories?')) {
-      resetToSampleData();
-    }
-  };
-
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', padding: '0 16px' }}>
       {/* Header */}
@@ -94,7 +86,7 @@ export const SettingsView = () => {
           <h3 style={{ fontSize: '1rem', fontWeight: 700 }}>Default Currency</h3>
         </div>
 
-        <div style={{
+        <div className="settings-grid" style={{
           display: 'grid',
           gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
           gap: '10px'
@@ -180,7 +172,7 @@ export const SettingsView = () => {
           Expense Tracker is a Progressive Web App (PWA). Once deployed, you can install it on your iPhone or Android phone with <strong>zero app store hassle</strong>:
         </p>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '12px' }}>
+        <div className="settings-install-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '12px' }}>
           <div style={{ background: 'var(--bg-primary)', padding: '14px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
             <h4 style={{ fontSize: '0.85rem', fontWeight: 700, marginBottom: '6px' }}>📱 On iPhone (iOS Safari):</h4>
             <ol style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', paddingLeft: '18px', lineHeight: '1.6' }}>
@@ -252,15 +244,6 @@ export const SettingsView = () => {
             accept=".json" 
             style={{ display: 'none' }} 
           />
-
-          <button 
-            onClick={handleResetSample}
-            className="btn btn-ghost"
-            style={{ fontSize: '0.85rem' }}
-          >
-            <RotateCcw size={16} />
-            <span>Load Sample Data</span>
-          </button>
 
           <button 
             onClick={handleWipe}

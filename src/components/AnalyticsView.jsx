@@ -101,7 +101,7 @@ export const AnalyticsView = () => {
       </div>
 
       {/* Two Column Grid: Donut Chart & Category Table */}
-      <div style={{
+      <div className="analytics-grid" style={{
         display: 'grid',
         gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
         gap: '16px'

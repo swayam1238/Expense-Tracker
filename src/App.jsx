@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import './index.css';
 import { AppProvider, useApp } from './context/AppContext';
 import { Header } from './components/Header';
@@ -162,6 +162,12 @@ const AppShell = () => {
     setIsAuthModalOpen,
   } = useApp();
 
+  useEffect(() => {
+    if (!isAuthLoading && !user && isFirebaseConfigured()) {
+      setIsAuthModalOpen(true);
+    }
+  }, [isAuthLoading, user, setIsAuthModalOpen]);
+
   if (isAuthLoading) {
     return <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', color: 'var(--text-muted)' }}>Loading secure account...</div>;
   }
@@ -197,7 +203,7 @@ const AppShell = () => {
     <>
       <Header />
 
-      <main style={{ flex: 1, overflowY: 'auto' }}>
+      <main style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', minWidth: 0 }}>
         {activeTab === 'dashboard' && <DashboardView />}
         {activeTab === 'transactions' && <TransactionsView />}
         {activeTab === 'analytics' && <AnalyticsView />}

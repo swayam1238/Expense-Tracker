@@ -1,7 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { 
-  DEFAULT_CATEGORIES, 
-  SAMPLE_INITIAL_EXPENSES,
+  DEFAULT_CATEGORIES,
   normalizePaymentMethod
 } from '../constants';
 import { 
@@ -119,11 +118,11 @@ export const AppProvider = ({ children }) => {
   // Expenses
   const [expenses, setExpenses] = useState(() => {
     const saved = isFirebaseConfigured() ? null : localStorage.getItem(LOCAL_STORAGE_EXPENSES_KEY);
-    const parsed = saved ? JSON.parse(saved) : SAMPLE_INITIAL_EXPENSES;
+    const parsed = saved ? JSON.parse(saved) : [];
     return Array.isArray(parsed) ? parsed.map(exp => ({
       ...exp,
       paymentMethod: normalizePaymentMethod(exp.paymentMethod)
-    })) : SAMPLE_INITIAL_EXPENSES;
+    })) : [];
   });
 
   // Apply theme to document
@@ -208,7 +207,7 @@ export const AppProvider = ({ children }) => {
     if (!user && !isFirebaseConfigured()) {
       localStorage.setItem(LOCAL_STORAGE_CATEGORIES_KEY, JSON.stringify(categories));
       localStorage.setItem(LOCAL_STORAGE_CATEGORY_MONTHS_KEY, JSON.stringify(categoriesByMonth));
-    } else {
+    } else if (user && isFirebaseConfigured()) {
       saveUserSettingsToCloud(user.uid, { categories, categoriesByMonth }).catch(console.error);
     }
   }, [categories, categoriesByMonth, user]);
@@ -216,7 +215,7 @@ export const AppProvider = ({ children }) => {
   useEffect(() => {
     if (!user && !isFirebaseConfigured()) {
       localStorage.setItem(LOCAL_STORAGE_BUDGET_KEY, monthlyBudget.toString());
-    } else {
+    } else if (user && isFirebaseConfigured()) {
       saveUserSettingsToCloud(user.uid, { monthlyBudget }).catch(console.error);
     }
   }, [monthlyBudget, user]);
@@ -224,7 +223,7 @@ export const AppProvider = ({ children }) => {
   useEffect(() => {
     if (!user && !isFirebaseConfigured()) {
       localStorage.setItem(LOCAL_STORAGE_CURRENCY_KEY, JSON.stringify(currency));
-    } else {
+    } else if (user && isFirebaseConfigured()) {
       saveUserSettingsToCloud(user.uid, { currency }).catch(console.error);
     }
   }, [currency, user]);
@@ -452,16 +451,6 @@ export const AppProvider = ({ children }) => {
     }
   };
 
-  // Reset to default sample
-  const resetToSampleData = () => {
-    setExpenses(SAMPLE_INITIAL_EXPENSES);
-    setCategoriesByMonth(prev => ({
-      ...prev,
-      [selectedMonth]: cloneCategoryList(DEFAULT_CATEGORIES)
-    }));
-    setMonthlyBudget(35000);
-  };
-
   // Clear all data
   const clearAllData = () => {
     setExpenses([]);
@@ -513,7 +502,6 @@ export const AppProvider = ({ children }) => {
       exportToCSV,
       exportToJSON,
       importFromJSON,
-      resetToSampleData,
       clearAllData,
       logoutUser
     }}>

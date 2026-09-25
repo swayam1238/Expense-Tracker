@@ -59,9 +59,9 @@ export const Header = () => {
       position: 'sticky',
       top: 0,
       zIndex: 100,
-    }}>
+    }} className="app-header">
       {/* Left: Auth + month selector */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: '80px', flexWrap: 'wrap' }}>
+      <div className="header-left" style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: '80px', flexWrap: 'wrap' }}>
         {user ? (
           <button
             onClick={logoutUser}
@@ -109,7 +109,7 @@ export const Header = () => {
       </div>
 
       {/* Center: Month Navigator */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
+      <div className="header-center" style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
         <button onClick={handlePrev} className="btn btn-ghost" style={{ padding: '6px', borderRadius: '50%', width: 32, height: 32 }}>
           <ChevronLeft size={18} />
         </button>
@@ -135,7 +135,7 @@ export const Header = () => {
       </div>
 
       {/* Right: Theme Toggle */}
-      <div style={{ minWidth: '80px', display: 'flex', justifyContent: 'flex-end' }}>
+      <div className="header-right" style={{ minWidth: '80px', display: 'flex', justifyContent: 'flex-end' }}>
         <button
           onClick={toggleTheme}
           className="btn btn-ghost"

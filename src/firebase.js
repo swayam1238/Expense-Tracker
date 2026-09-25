@@ -5,6 +5,7 @@ import {
   GoogleAuthProvider, 
   signInWithEmailAndPassword, 
   createUserWithEmailAndPassword, 
+  sendEmailVerification,
   signOut, 
   onAuthStateChanged 
 } from 'firebase/auth';
@@ -36,7 +37,9 @@ const firebaseConfig = {
 export const ALLOWED_EMAIL = 'swayamv13@gmail.com';
 
 export const isAllowedUser = (user) => Boolean(
-  user?.email && user.email.toLowerCase() === ALLOWED_EMAIL
+  user?.email
+  && user.email.toLowerCase() === ALLOWED_EMAIL
+  && user.emailVerified === true
 );
 
 // Check if credentials are supplied
@@ -76,7 +79,9 @@ export const loginWithEmail = async (email, password) => {
 
 export const registerWithEmail = async (email, password) => {
   if (!auth) throw new Error('Firebase is not configured yet. Configure your keys in Settings.');
-  return createUserWithEmailAndPassword(auth, email, password);
+  const credential = await createUserWithEmailAndPassword(auth, email, password);
+  await sendEmailVerification(credential.user);
+  return credential;
 };
 
 export const logoutUser = async () => {

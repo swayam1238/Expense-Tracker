@@ -18,14 +18,6 @@ export const MagicNotesModal = () => {
   const [isSuccess, setIsSuccess] = useState(false);
   const [importCount, setImportCount] = useState(0);
 
-  // Sample template note to guide user
-  const sampleNote = `Dinner with friends 650 upi
-Supermarket grocery 1420 card
-Uber to office 240
-Coffee 80 cash
-Electricity bill 950
-Netflix 499 card`;
-
   useEffect(() => {
     if (noteContent.trim()) {
       const results = parseMultiLineNotes(noteContent, categories);
@@ -36,10 +28,6 @@ Netflix 499 card`;
   }, [noteContent, categories]);
 
   if (!isMagicNoteOpen) return null;
-
-  const handleUseSample = () => {
-    setNoteContent(sampleNote);
-  };
 
   const handleRemoveParsedItem = (index) => {
     setParsedItems(prev => prev.filter((_, i) => i !== index));
@@ -108,19 +96,10 @@ Netflix 499 card`;
           </div>
         ) : (
           <div>
-            {/* Quick Actions */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+            <div style={{ marginBottom: '8px' }}>
               <label style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
                 Paste raw text here:
               </label>
-              <button 
-                type="button" 
-                onClick={handleUseSample}
-                className="btn-ghost"
-                style={{ fontSize: '0.75rem', color: 'var(--accent-primary)', cursor: 'pointer', padding: '2px 6px' }}
-              >
-                Insert Sample Note
-              </button>
             </div>
 
             {/* Textarea */}

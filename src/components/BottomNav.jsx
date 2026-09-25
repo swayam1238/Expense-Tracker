@@ -18,10 +18,13 @@ export const BottomNav = () => {
       <nav style={{
         position: 'fixed',
         bottom: 0,
-        left: '50%',
-        transform: 'translateX(-50%)',
-        width: '100%',
+        left: 0,
+        right: 0,
+        margin: '0 auto',
+        width: 'min(100%, 480px)',
         maxWidth: 480,
+        boxSizing: 'border-box',
+        overflow: 'hidden',
         background: 'var(--bg-surface)',
         borderTop: '1px solid var(--border-subtle)',
         display: 'flex',
@@ -70,6 +73,7 @@ export const BottomNav = () => {
               onClick={() => setActiveTab(id)}
               style={{
                 flex: 1,
+                minWidth: 0,
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
@@ -94,7 +98,7 @@ export const BottomNav = () => {
               }}>
                 <Icon size={20} strokeWidth={isActive ? 2.4 : 1.8} />
               </div>
-              <span style={{ fontSize: '0.68rem', fontWeight: isActive ? 700 : 500, letterSpacing: '0.2px' }}>
+              <span style={{ fontSize: '0.64rem', fontWeight: isActive ? 700 : 500, letterSpacing: '0.1px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>
                 {label}
               </span>
             </button>

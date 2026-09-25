@@ -115,6 +115,60 @@ body {
   flex-direction: column;
 }
 
+@media (max-width: 480px) {
+  .analytics-grid,
+  .categories-grid,
+  .settings-grid,
+  .settings-install-grid,
+  .transactions-filter-grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .glass-card {
+    min-width: 0;
+  }
+
+  .app-header {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-rows: auto auto;
+    row-gap: 8px;
+    align-items: center;
+    padding-left: 12px !important;
+    padding-right: 12px !important;
+  }
+
+  .header-left {
+    min-width: 0 !important;
+    flex-wrap: nowrap !important;
+    gap: 6px !important;
+  }
+
+  .header-left > div {
+    min-width: 0;
+  }
+
+  .header-left .select {
+    min-width: 0 !important;
+    width: auto;
+    padding-left: 6px !important;
+    padding-right: 6px !important;
+  }
+
+  .header-center {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    justify-content: center;
+    width: 100%;
+  }
+
+  .header-right {
+    grid-column: 2;
+    grid-row: 1;
+    min-width: 36px !important;
+  }
+}
+
 @media (min-width: 768px) {
   #root {
     border-left: 1px solid var(--border-subtle);
@@ -173,6 +227,48 @@ body {
   color: var(--text-primary);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-xs);
+}
+
+/* ── Dialogs ── */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  overflow-y: auto;
+  background: var(--bg-overlay);
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
+  animation: fadeIn 0.2s ease;
+}
+
+.modal-content {
+  width: min(100%, 520px);
+  max-width: 520px;
+  max-height: calc(100dvh - 40px);
+  overflow-y: auto;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  padding: 20px;
+  animation: popIn 0.2s ease;
+}
+
+@media (max-width: 480px) {
+  .modal-overlay {
+    align-items: flex-start;
+    padding: max(12px, var(--safe-top)) 12px 12px;
+  }
+
+  .modal-content {
+    max-height: calc(100dvh - max(24px, var(--safe-top)) - 12px);
+    border-radius: var(--radius-lg);
+    padding: 16px;
+  }
 }
 
 /* ── Inputs ── */
