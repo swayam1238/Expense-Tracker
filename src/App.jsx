@@ -12,8 +12,8 @@ import { AddExpenseModal } from './components/AddExpenseModal';
 import { AuthModal } from './components/AuthModal';
 import { isFirebaseConfigured, saveUserSettingsToCloud } from './firebase';
 import {
-  APP_UNLOCKED_KEY,
   isAppLockEnabled,
+  isAppUnlocked,
   getLockMode,
   hasCustomPasscode,
   setCustomPasscode,
@@ -360,7 +360,6 @@ const AppShell = () => {
     activeTab,
     user,
     isAuthLoading,
-    lockUserApp,
   } = useApp();
 
   // Local lock state — initialized only once we know the userId
