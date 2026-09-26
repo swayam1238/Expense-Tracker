@@ -1,6 +1,6 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
-import { isFirebaseConfigured } from '../firebase';
+import { isFirebaseConfigured, saveUserSettingsToCloud } from '../firebase';
 import { 
   Settings as SettingsIcon, 
   DollarSign, 
@@ -50,6 +50,7 @@ export const SettingsView = () => {
     cloudSynced, 
     setIsAuthModalOpen,
     logoutUser,
+    lockUserApp,
     exportToJSON, 
     exportToCSV, 
     importFromJSON, 
@@ -61,46 +62,63 @@ export const SettingsView = () => {
   const fileInputRef = useRef(null);
   const [importStatus, setImportStatus] = useState(null);
 
-  // App Lock & Passcode State
-  const [currentLockMode, setCurrentLockMode] = useState(getLockMode);
-  const [passcodeSet, setPasscodeSet] = useState(hasCustomPasscode);
+  // App Lock & Passcode State (isolated per user)
+  const [currentLockMode, setCurrentLockMode] = useState(() => getLockMode(user?.uid));
+  const [passcodeSet, setPasscodeSet] = useState(() => hasCustomPasscode(user?.uid));
   const [isPasscodeModalOpen, setIsPasscodeModalOpen] = useState(false);
   const [newPasscode, setNewPasscode] = useState('');
   const [confirmPasscode, setConfirmPasscode] = useState('');
   const [passcodeError, setPasscodeError] = useState('');
   const [passcodeSuccess, setPasscodeSuccess] = useState('');
 
-  const handleSelectLockMode = (mode) => {
-    if (mode === 'passcode' && !hasCustomPasscode()) {
+  useEffect(() => {
+    if (user?.uid) {
+      setCurrentLockMode(getLockMode(user.uid));
+      setPasscodeSet(hasCustomPasscode(user.uid));
+    }
+  }, [user?.uid]);
+
+  const handleSelectLockMode = async (mode) => {
+    if (mode === 'passcode' && !hasCustomPasscode(user?.uid)) {
       setIsPasscodeModalOpen(true);
       return;
     }
-    setLockMode(mode);
+    setLockMode(mode, user?.uid);
     setCurrentLockMode(mode);
+    if (user?.uid && isFirebaseConfigured()) {
+      saveUserSettingsToCloud(user.uid, { lockMode: mode }).catch(console.error);
+    }
   };
 
   const handleSavePasscode = async (e) => {
     e.preventDefault();
     setPasscodeError('');
-    if (newPasscode.trim().length < 4) {
-      setPasscodeError('Passcode must be at least 4 digits.');
+    const cleanPasscode = newPasscode.trim();
+    const cleanConfirm = confirmPasscode.trim();
+
+    if (!/^\d{4}$/.test(cleanPasscode)) {
+      setPasscodeError('Passcode must be exactly 4 digits (numbers only).');
       return;
     }
-    if (newPasscode.trim() !== confirmPasscode.trim()) {
+    if (cleanPasscode !== cleanConfirm) {
       setPasscodeError('Passcodes do not match. Please verify.');
       return;
     }
+
     try {
-      await setCustomPasscode(newPasscode.trim());
+      const hash = await setCustomPasscode(cleanPasscode, user?.uid);
       setPasscodeSet(true);
       setCurrentLockMode('passcode');
-      setPasscodeSuccess('Passcode set successfully!');
+      if (user?.uid && isFirebaseConfigured()) {
+        saveUserSettingsToCloud(user.uid, { lockMode: 'passcode', passcodeHash: hash }).catch(console.error);
+      }
+      setPasscodeSuccess('4-digit passcode set successfully!');
       setTimeout(() => {
         setIsPasscodeModalOpen(false);
         setNewPasscode('');
         setConfirmPasscode('');
         setPasscodeSuccess('');
-      }, 1000);
+      }, 700);
     } catch (err) {
       setPasscodeError(err.message || 'Failed to save passcode.');
     }
@@ -108,9 +126,13 @@ export const SettingsView = () => {
 
   const handleRemovePasscode = () => {
     if (window.confirm('Are you sure you want to remove your custom passcode?')) {
-      removeCustomPasscode();
+      removeCustomPasscode(user?.uid);
       setPasscodeSet(false);
-      setCurrentLockMode(getLockMode());
+      const nextMode = getLockMode(user?.uid);
+      setCurrentLockMode(nextMode);
+      if (user?.uid && isFirebaseConfigured()) {
+        saveUserSettingsToCloud(user.uid, { lockMode: nextMode, passcodeHash: null }).catch(console.error);
+      }
     }
   };
 
@@ -423,10 +445,7 @@ export const SettingsView = () => {
           {currentLockMode !== 'none' && (
             <button 
               type="button"
-              onClick={() => {
-                lockApp();
-                window.location.reload();
-              }}
+              onClick={lockUserApp}
               className="btn btn-secondary"
               style={{ fontSize: '0.85rem', marginLeft: 'auto' }}
             >
@@ -526,7 +545,7 @@ export const SettingsView = () => {
             </div>
 
             <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '16px', lineHeight: 1.4 }}>
-              Choose a 4-6 digit passcode to protect your expenses. This passcode is securely encrypted on your device.
+              Choose a 4-digit passcode to protect your expenses. Each user has their own private passcode and lock settings.
             </p>
 
             {passcodeError && (
@@ -558,34 +577,38 @@ export const SettingsView = () => {
             <form onSubmit={handleSavePasscode} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
               <div>
                 <label style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '4px', display: 'block' }}>
-                  New Passcode (min 4 digits)
+                  New 4-Digit Passcode
                 </label>
                 <input
                   type="password"
                   inputMode="numeric"
+                  pattern="[0-9]*"
+                  maxLength={4}
                   autoFocus
                   required
                   placeholder="••••"
                   value={newPasscode}
-                  onChange={(e) => setNewPasscode(e.target.value)}
+                  onChange={(e) => setNewPasscode(e.target.value.replace(/\D/g, '').slice(0, 4))}
                   className="input mono"
-                  style={{ textAlign: 'center', letterSpacing: '0.3em', fontSize: '1.2rem', padding: '10px' }}
+                  style={{ textAlign: 'center', letterSpacing: '0.4em', fontSize: '1.4rem', padding: '10px' }}
                 />
               </div>
 
               <div>
                 <label style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '4px', display: 'block' }}>
-                  Confirm Passcode
+                  Confirm 4-Digit Passcode
                 </label>
                 <input
                   type="password"
                   inputMode="numeric"
+                  pattern="[0-9]*"
+                  maxLength={4}
                   required
                   placeholder="••••"
                   value={confirmPasscode}
-                  onChange={(e) => setConfirmPasscode(e.target.value)}
+                  onChange={(e) => setConfirmPasscode(e.target.value.replace(/\D/g, '').slice(0, 4))}
                   className="input mono"
-                  style={{ textAlign: 'center', letterSpacing: '0.3em', fontSize: '1.2rem', padding: '10px' }}
+                  style={{ textAlign: 'center', letterSpacing: '0.4em', fontSize: '1.4rem', padding: '10px' }}
                 />
               </div>
 

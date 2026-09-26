@@ -15,6 +15,12 @@ import {
   logoutUser,
   isAllowedUser
 } from '../firebase';
+import {
+  isAppUnlocked,
+  lockApp,
+  getLockModeKey,
+  getPasscodeHashKey
+} from '../utils/appLock';
 
 const AppContext = createContext();
 
@@ -86,6 +92,22 @@ export const AppProvider = ({ children }) => {
   const [authError, setAuthError] = useState('');
   const [cloudSynced, setCloudSynced] = useState(false);
   const [isSettingsLoaded, setIsSettingsLoaded] = useState(false);
+  const [isUnlocked, setIsUnlocked] = useState(false);
+
+  useEffect(() => {
+    if (user?.uid) {
+      setIsUnlocked(isAppUnlocked(user.uid));
+    } else {
+      setIsUnlocked(false);
+    }
+  }, [user?.uid]);
+
+  const lockUserApp = () => {
+    if (user?.uid) {
+      lockApp(user.uid);
+    }
+    setIsUnlocked(false);
+  };
 
   // Currency
   const [currency, setCurrency] = useState(() => {
@@ -189,6 +211,12 @@ export const AppProvider = ({ children }) => {
         }
         if (cloudSettings.monthlyBudget) setMonthlyBudget(Number(cloudSettings.monthlyBudget));
         if (cloudSettings.currency) setCurrency(cloudSettings.currency);
+        if (cloudSettings.lockMode) {
+          localStorage.setItem(getLockModeKey(user.uid), cloudSettings.lockMode);
+        }
+        if (cloudSettings.passcodeHash) {
+          localStorage.setItem(getPasscodeHashKey(user.uid), cloudSettings.passcodeHash);
+        }
       } else {
         // Brand new user: initialize clean default settings
         setCategoriesByMonth({ [initialMonth]: cloneCategoryList(DEFAULT_CATEGORIES) });
@@ -471,6 +499,10 @@ export const AppProvider = ({ children }) => {
   // Clean logout: resets all in-memory state so no user data ever bleeds over
   const handleLogout = async () => {
     try {
+      if (user?.uid) {
+        lockApp(user.uid);
+      }
+      setIsUnlocked(false);
       await logoutUser();
       setUser(null);
       setExpenses([]);
@@ -517,6 +549,9 @@ export const AppProvider = ({ children }) => {
       categories,
       categoriesByMonth,
       expenses,
+      isUnlocked,
+      setIsUnlocked,
+      lockUserApp,
       
       // Actions
       addExpense,
