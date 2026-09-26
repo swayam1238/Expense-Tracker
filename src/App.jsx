@@ -100,11 +100,12 @@ const AppLock = ({ onUnlock, userId }) => {
       if (userId && isFirebaseConfigured()) {
         saveUserSettingsToCloud(userId, { lockMode: 'passcode', passcodeHash: hash }).catch(console.error);
       }
-      setIsSettingUp(false);
-      setSetupPasscode('');
-      setSetupConfirm('');
-      setActiveView('passcode');
-      setErrorMessage('Passcode created! Enter it to unlock.');
+      // Mark session as unlocked — they just set it up, no need to re-enter
+      sessionStorage.setItem(
+        userId ? `expense_tracker_${userId}_unlocked` : 'expense_tracker_unlocked',
+        'true'
+      );
+      onUnlock();
     } catch (err) {
       setSetupError(err.message || 'Failed to set passcode.');
     }
