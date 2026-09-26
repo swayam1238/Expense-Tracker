@@ -1,6 +1,7 @@
 export const APP_UNLOCKED_KEY = 'expense_tracker_unlocked';
 export const APP_DEVICE_CREDENTIAL_KEY = 'expense_tracker_device_credential_id';
-export const APP_DEVICE_LOCK_DISABLED_KEY = 'expense_tracker_device_lock_disabled';
+export const APP_LOCK_MODE_KEY = 'expense_tracker_lock_mode'; // 'biometric' | 'passcode' | 'none'
+export const APP_PASSCODE_HASH_KEY = 'expense_tracker_passcode_hash';
 
 // Checks if the browser & device support WebAuthn platform authenticators (fingerprint, face, PIN, pattern)
 export const canUseDeviceLock = () => Boolean(
@@ -10,22 +11,83 @@ export const canUseDeviceLock = () => Boolean(
   && window.isSecureContext
 );
 
-// Check if device lock is active (default is true if device supports it)
-export const isDeviceLockEnabled = () => {
-  if (!canUseDeviceLock()) return false;
-  return localStorage.getItem(APP_DEVICE_LOCK_DISABLED_KEY) !== 'true';
+const sha256Hex = async (value) => {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
 };
 
-export const setDeviceLockEnabled = (enabled) => {
-  if (enabled) {
-    localStorage.removeItem(APP_DEVICE_LOCK_DISABLED_KEY);
-  } else {
-    localStorage.setItem(APP_DEVICE_LOCK_DISABLED_KEY, 'true');
+const timingSafeEqual = (left, right) => {
+  if (left.length !== right.length) return false;
+  let diff = 0;
+  for (let index = 0; index < left.length; index += 1) {
+    diff |= left.charCodeAt(index) ^ right.charCodeAt(index);
+  }
+  return diff === 0;
+};
+
+export const hasCustomPasscode = () => Boolean(localStorage.getItem(APP_PASSCODE_HASH_KEY));
+
+export const setCustomPasscode = async (passcode) => {
+  const cleaned = (passcode || '').trim();
+  if (cleaned.length < 4) {
+    throw new Error('Passcode must be at least 4 digits.');
+  }
+  const hash = await sha256Hex(cleaned);
+  localStorage.setItem(APP_PASSCODE_HASH_KEY, hash);
+  localStorage.setItem(APP_LOCK_MODE_KEY, 'passcode');
+  return true;
+};
+
+export const removeCustomPasscode = () => {
+  localStorage.removeItem(APP_PASSCODE_HASH_KEY);
+  if (localStorage.getItem(APP_LOCK_MODE_KEY) === 'passcode') {
+    if (canUseDeviceLock()) {
+      localStorage.setItem(APP_LOCK_MODE_KEY, 'biometric');
+    } else {
+      localStorage.setItem(APP_LOCK_MODE_KEY, 'none');
+    }
   }
 };
 
+export const verifyCustomPasscode = async (enteredPasscode) => {
+  const storedHash = localStorage.getItem(APP_PASSCODE_HASH_KEY);
+  if (!storedHash) return true;
+  const enteredHash = await sha256Hex((enteredPasscode || '').trim());
+  const isValid = timingSafeEqual(enteredHash, storedHash);
+  if (isValid) {
+    sessionStorage.setItem(APP_UNLOCKED_KEY, 'true');
+  }
+  return isValid;
+};
+
+/**
+ * Returns current lock mode:
+ * 'biometric' | 'passcode' | 'none'
+ */
+export const getLockMode = () => {
+  const explicit = localStorage.getItem(APP_LOCK_MODE_KEY);
+  if (explicit) return explicit;
+  if (hasCustomPasscode()) return 'passcode';
+  if (canUseDeviceLock()) return 'biometric';
+  return 'none';
+};
+
+export const setLockMode = (mode) => {
+  if (mode === 'biometric' || mode === 'passcode' || mode === 'none') {
+    localStorage.setItem(APP_LOCK_MODE_KEY, mode);
+  }
+};
+
+export const isAppLockEnabled = () => {
+  const mode = getLockMode();
+  if (mode === 'none') return false;
+  if (mode === 'passcode') return hasCustomPasscode();
+  if (mode === 'biometric') return canUseDeviceLock();
+  return false;
+};
+
 export const isAppUnlocked = () => {
-  if (!isDeviceLockEnabled()) return true;
+  if (!isAppLockEnabled()) return true;
   return sessionStorage.getItem(APP_UNLOCKED_KEY) === 'true';
 };
 
@@ -74,11 +136,9 @@ export const authenticateWithDeviceLock = async () => {
         return true;
       }
     } catch (err) {
-      // If user cancelled, don't delete stored credential
       if (err.name === 'NotAllowedError') {
         throw new Error('Authentication was cancelled. Tap to try again.');
       }
-      // If credential not found or device changed, clear and fall through to registration
       console.warn('Stored credential verification failed, recreating credential:', err);
       localStorage.removeItem(APP_DEVICE_CREDENTIAL_KEY);
     }

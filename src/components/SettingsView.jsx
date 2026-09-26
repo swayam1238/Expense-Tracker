@@ -15,9 +15,21 @@ import {
   Flame,
   Info,
   Lock,
-  LogOut
+  LogOut,
+  KeyRound,
+  Shield,
+  ShieldOff,
+  X
 } from 'lucide-react';
-import { lockApp, canUseDeviceLock, isDeviceLockEnabled } from '../utils/appLock';
+import { 
+  lockApp, 
+  canUseDeviceLock, 
+  getLockMode, 
+  setLockMode, 
+  hasCustomPasscode, 
+  setCustomPasscode, 
+  removeCustomPasscode 
+} from '../utils/appLock';
 
 const AVAILABLE_CURRENCIES = [
   { symbol: '₹', code: 'INR', name: 'Indian Rupee (₹)' },
@@ -48,6 +60,59 @@ export const SettingsView = () => {
 
   const fileInputRef = useRef(null);
   const [importStatus, setImportStatus] = useState(null);
+
+  // App Lock & Passcode State
+  const [currentLockMode, setCurrentLockMode] = useState(getLockMode);
+  const [passcodeSet, setPasscodeSet] = useState(hasCustomPasscode);
+  const [isPasscodeModalOpen, setIsPasscodeModalOpen] = useState(false);
+  const [newPasscode, setNewPasscode] = useState('');
+  const [confirmPasscode, setConfirmPasscode] = useState('');
+  const [passcodeError, setPasscodeError] = useState('');
+  const [passcodeSuccess, setPasscodeSuccess] = useState('');
+
+  const handleSelectLockMode = (mode) => {
+    if (mode === 'passcode' && !hasCustomPasscode()) {
+      setIsPasscodeModalOpen(true);
+      return;
+    }
+    setLockMode(mode);
+    setCurrentLockMode(mode);
+  };
+
+  const handleSavePasscode = async (e) => {
+    e.preventDefault();
+    setPasscodeError('');
+    if (newPasscode.trim().length < 4) {
+      setPasscodeError('Passcode must be at least 4 digits.');
+      return;
+    }
+    if (newPasscode.trim() !== confirmPasscode.trim()) {
+      setPasscodeError('Passcodes do not match. Please verify.');
+      return;
+    }
+    try {
+      await setCustomPasscode(newPasscode.trim());
+      setPasscodeSet(true);
+      setCurrentLockMode('passcode');
+      setPasscodeSuccess('Passcode set successfully!');
+      setTimeout(() => {
+        setIsPasscodeModalOpen(false);
+        setNewPasscode('');
+        setConfirmPasscode('');
+        setPasscodeSuccess('');
+      }, 1000);
+    } catch (err) {
+      setPasscodeError(err.message || 'Failed to save passcode.');
+    }
+  };
+
+  const handleRemovePasscode = () => {
+    if (window.confirm('Are you sure you want to remove your custom passcode?')) {
+      removeCustomPasscode();
+      setPasscodeSet(false);
+      setCurrentLockMode(getLockMode());
+    }
+  };
 
   const handleFileUpload = (e) => {
     const file = e.target.files[0];
@@ -223,37 +288,152 @@ export const SettingsView = () => {
         </div>
       </div>
 
-      {/* Device Screen Lock & Biometrics */}
+      {/* App Security & Lock Options */}
       <div className="glass-card" style={{ padding: '20px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <ShieldCheck size={20} style={{ color: '#10b981' }} />
-            <h3 style={{ fontSize: '1rem', fontWeight: 700 }}>Phone Screen Lock & Biometrics</h3>
+            <ShieldCheck size={20} style={{ color: currentLockMode !== 'none' ? '#10b981' : 'var(--text-muted)' }} />
+            <h3 style={{ fontSize: '1rem', fontWeight: 700 }}>App Security & Lock</h3>
           </div>
           <span className="badge" style={{
-            background: canUseDeviceLock() ? 'rgba(16, 185, 129, 0.15)' : 'rgba(148, 163, 184, 0.15)',
-            color: canUseDeviceLock() ? 'var(--color-success)' : 'var(--text-muted)'
+            background: currentLockMode !== 'none' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(148, 163, 184, 0.15)',
+            color: currentLockMode !== 'none' ? 'var(--color-success)' : 'var(--text-muted)'
           }}>
-            {canUseDeviceLock() ? 'Active' : 'Unavailable'}
+            {currentLockMode === 'biometric' ? 'Phone Lock Active' : (currentLockMode === 'passcode' ? 'Custom Passcode Active' : 'Lock Disabled')}
           </span>
         </div>
 
         <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: '1.5', marginBottom: '16px' }}>
-          Your app is secured using your phone's native security: <strong>Fingerprint, Face ID, PIN, pattern, or password</strong>. The old static code 1997 has been removed.
+          Choose how you prefer to secure your expense tracker:
         </p>
 
-        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+        {/* Security Options Grid */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '10px', marginBottom: '16px' }}>
+          {/* Option 1: Phone Screen Lock & Biometrics */}
+          <div 
+            onClick={() => handleSelectLockMode('biometric')}
+            style={{
+              padding: '14px',
+              borderRadius: 'var(--radius-md)',
+              background: currentLockMode === 'biometric' ? 'var(--accent-soft)' : 'var(--bg-primary)',
+              border: `1.5px solid ${currentLockMode === 'biometric' ? 'var(--accent)' : 'var(--border-subtle)'}`,
+              cursor: 'pointer',
+              transition: 'all 0.2s ease',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '6px'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 700, fontSize: '0.9rem' }}>
+                <Shield size={16} color="var(--accent)" />
+                <span>Phone Screen Lock / Biometrics</span>
+              </div>
+              {currentLockMode === 'biometric' && <Check size={16} color="var(--accent)" />}
+            </div>
+            <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.4 }}>
+              Uses your phone's native Fingerprint, Face ID, PIN, pattern, or device password.
+            </p>
+          </div>
+
+          {/* Option 2: Custom Passcode */}
+          <div 
+            onClick={() => handleSelectLockMode('passcode')}
+            style={{
+              padding: '14px',
+              borderRadius: 'var(--radius-md)',
+              background: currentLockMode === 'passcode' ? 'var(--accent-soft)' : 'var(--bg-primary)',
+              border: `1.5px solid ${currentLockMode === 'passcode' ? 'var(--accent)' : 'var(--border-subtle)'}`,
+              cursor: 'pointer',
+              transition: 'all 0.2s ease',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '6px'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 700, fontSize: '0.9rem' }}>
+                <KeyRound size={16} color="var(--accent)" />
+                <span>Custom Passcode / PIN</span>
+              </div>
+              {currentLockMode === 'passcode' && <Check size={16} color="var(--accent)" />}
+            </div>
+            <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.4 }}>
+              Create your own personal 4-6 digit passcode to unlock the app.
+            </p>
+          </div>
+
+          {/* Option 3: No Lock */}
+          <div 
+            onClick={() => handleSelectLockMode('none')}
+            style={{
+              padding: '14px',
+              borderRadius: 'var(--radius-md)',
+              background: currentLockMode === 'none' ? 'var(--accent-soft)' : 'var(--bg-primary)',
+              border: `1.5px solid ${currentLockMode === 'none' ? 'var(--accent)' : 'var(--border-subtle)'}`,
+              cursor: 'pointer',
+              transition: 'all 0.2s ease',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '6px'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 700, fontSize: '0.9rem' }}>
+                <ShieldOff size={16} color="var(--text-muted)" />
+                <span>No Lock (Disabled)</span>
+              </div>
+              {currentLockMode === 'none' && <Check size={16} color="var(--accent)" />}
+            </div>
+            <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.4 }}>
+              App opens immediately without asking for biometric or passcode unlock.
+            </p>
+          </div>
+        </div>
+
+        {/* Passcode Management Buttons */}
+        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center', paddingTop: '6px', borderTop: '1px solid var(--border-subtle)' }}>
           <button 
+            type="button"
             onClick={() => {
-              lockApp();
-              window.location.reload();
+              setNewPasscode('');
+              setConfirmPasscode('');
+              setPasscodeError('');
+              setPasscodeSuccess('');
+              setIsPasscodeModalOpen(true);
             }}
             className="btn btn-secondary"
             style={{ fontSize: '0.85rem' }}
           >
-            <Lock size={15} />
-            <span>Lock App Now</span>
+            <KeyRound size={15} />
+            <span>{passcodeSet ? 'Change Custom Passcode' : 'Set Up Custom Passcode'}</span>
           </button>
+
+          {passcodeSet && (
+            <button 
+              type="button"
+              onClick={handleRemovePasscode}
+              className="btn btn-ghost"
+              style={{ fontSize: '0.85rem', color: 'var(--danger)' }}
+            >
+              <span>Remove Passcode</span>
+            </button>
+          )}
+
+          {currentLockMode !== 'none' && (
+            <button 
+              type="button"
+              onClick={() => {
+                lockApp();
+                window.location.reload();
+              }}
+              className="btn btn-secondary"
+              style={{ fontSize: '0.85rem', marginLeft: 'auto' }}
+            >
+              <Lock size={15} />
+              <span>Lock App Now</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -319,6 +499,117 @@ export const SettingsView = () => {
           </button>
         </div>
       </div>
+
+      {/* Set Up Custom Passcode Modal */}
+      {isPasscodeModalOpen && (
+        <div className="modal-overlay" onClick={() => setIsPasscodeModalOpen(false)}>
+          <div 
+            className="glass-card" 
+            onClick={(e) => e.stopPropagation()}
+            style={{ width: '100%', maxWidth: '380px', padding: '28px' }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <KeyRound size={20} color="var(--accent)" />
+                <h3 style={{ fontSize: '1.15rem', fontWeight: 700 }}>
+                  {passcodeSet ? 'Change Passcode' : 'Set Up Passcode'}
+                </h3>
+              </div>
+              <button 
+                type="button" 
+                onClick={() => setIsPasscodeModalOpen(false)}
+                className="btn btn-ghost btn-icon"
+                style={{ borderRadius: '50%' }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '16px', lineHeight: 1.4 }}>
+              Choose a 4-6 digit passcode to protect your expenses. This passcode is securely encrypted on your device.
+            </p>
+
+            {passcodeError && (
+              <div style={{
+                padding: '8px 12px',
+                borderRadius: 'var(--radius-md)',
+                background: 'rgba(239, 68, 68, 0.15)',
+                color: 'var(--color-danger)',
+                fontSize: '0.8rem',
+                marginBottom: '14px'
+              }}>
+                {passcodeError}
+              </div>
+            )}
+
+            {passcodeSuccess && (
+              <div style={{
+                padding: '8px 12px',
+                borderRadius: 'var(--radius-md)',
+                background: 'rgba(16, 185, 129, 0.15)',
+                color: 'var(--color-success)',
+                fontSize: '0.8rem',
+                marginBottom: '14px'
+              }}>
+                {passcodeSuccess}
+              </div>
+            )}
+
+            <form onSubmit={handleSavePasscode} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div>
+                <label style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '4px', display: 'block' }}>
+                  New Passcode (min 4 digits)
+                </label>
+                <input
+                  type="password"
+                  inputMode="numeric"
+                  autoFocus
+                  required
+                  placeholder="••••"
+                  value={newPasscode}
+                  onChange={(e) => setNewPasscode(e.target.value)}
+                  className="input mono"
+                  style={{ textAlign: 'center', letterSpacing: '0.3em', fontSize: '1.2rem', padding: '10px' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '4px', display: 'block' }}>
+                  Confirm Passcode
+                </label>
+                <input
+                  type="password"
+                  inputMode="numeric"
+                  required
+                  placeholder="••••"
+                  value={confirmPasscode}
+                  onChange={(e) => setConfirmPasscode(e.target.value)}
+                  className="input mono"
+                  style={{ textAlign: 'center', letterSpacing: '0.3em', fontSize: '1.2rem', padding: '10px' }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', gap: '10px', marginTop: '6px' }}>
+                <button
+                  type="button"
+                  onClick={() => setIsPasscodeModalOpen(false)}
+                  className="btn btn-secondary"
+                  style={{ flex: 1, padding: '10px' }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  style={{ flex: 1, padding: '10px', fontWeight: 700 }}
+                >
+                  Save Passcode
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
