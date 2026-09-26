@@ -34,13 +34,10 @@ const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID || ''
 };
 
-export const ALLOWED_EMAIL = 'swayamv13@gmail.com';
+// Allow all users authenticated via Firebase Auth
+export const ALLOWED_EMAIL = null;
 
-export const isAllowedUser = (user) => Boolean(
-  user?.email
-  && user.email.toLowerCase() === ALLOWED_EMAIL
-  && user.emailVerified === true
-);
+export const isAllowedUser = (user) => Boolean(user && user.uid);
 
 // Check if credentials are supplied
 export const isFirebaseConfigured = () => {

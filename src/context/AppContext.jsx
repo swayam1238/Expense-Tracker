@@ -85,6 +85,7 @@ export const AppProvider = ({ children }) => {
   const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [authError, setAuthError] = useState('');
   const [cloudSynced, setCloudSynced] = useState(false);
+  const [isSettingsLoaded, setIsSettingsLoaded] = useState(false);
 
   // Currency
   const [currency, setCurrency] = useState(() => {
@@ -139,7 +140,7 @@ export const AppProvider = ({ children }) => {
   useEffect(() => {
     const unsubscribe = listenToAuth((currentUser) => {
       if (currentUser && !isAllowedUser(currentUser)) {
-        setAuthError('This private app is restricted to the Swayam account.');
+        setAuthError('Authentication failed. Please sign in again.');
         setUser(null);
         logoutUser().catch(console.error);
         setIsAuthLoading(false);
@@ -153,22 +154,32 @@ export const AppProvider = ({ children }) => {
     return () => unsubscribe();
   }, []);
 
-  // Sync with Firestore when user is logged in
+  // Sync with Firestore when user is logged in (strictly isolated per user.uid)
   useEffect(() => {
+    const initialMonth = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
+
     if (!user) {
       setCloudSynced(false);
+      setIsSettingsLoaded(false);
+      setExpenses([]);
+      setCategoriesByMonth({ [initialMonth]: cloneCategoryList(DEFAULT_CATEGORIES) });
+      setMonthlyBudget(35000);
+      setCurrency({ symbol: '₹', code: 'INR', name: 'Indian Rupee' });
       return;
     }
 
-    // Subscribe to real-time expenses from Firestore
+    // Immediately clear any prior user's data while new user's cloud data loads
+    setIsSettingsLoaded(false);
+    setExpenses([]);
+    setCategoriesByMonth({ [initialMonth]: cloneCategoryList(DEFAULT_CATEGORIES) });
+
+    // Subscribe to real-time expenses from Firestore for this specific user.uid
     const unsubExpenses = subscribeUserExpenses(user.uid, (cloudExpenses) => {
-      if (cloudExpenses && cloudExpenses.length > 0) {
-        setExpenses(cloudExpenses);
-        setCloudSynced(true);
-      }
+      setExpenses(cloudExpenses || []);
+      setCloudSynced(true);
     });
 
-    // Subscribe to user settings (budget, categories, currency)
+    // Subscribe to user settings (budget, categories, currency) for this specific user.uid
     const unsubSettings = subscribeUserSettings(user.uid, (cloudSettings) => {
       if (cloudSettings) {
         if (cloudSettings.categoriesByMonth && typeof cloudSettings.categoriesByMonth === 'object') {
@@ -176,16 +187,22 @@ export const AppProvider = ({ children }) => {
         } else if (cloudSettings.categories && Array.isArray(cloudSettings.categories)) {
           setCategoriesByMonth(prev => ({ ...prev, [selectedMonth]: cloudSettings.categories }));
         }
-        if (cloudSettings.monthlyBudget) setMonthlyBudget(cloudSettings.monthlyBudget);
+        if (cloudSettings.monthlyBudget) setMonthlyBudget(Number(cloudSettings.monthlyBudget));
         if (cloudSettings.currency) setCurrency(cloudSettings.currency);
+      } else {
+        // Brand new user: initialize clean default settings
+        setCategoriesByMonth({ [initialMonth]: cloneCategoryList(DEFAULT_CATEGORIES) });
+        setMonthlyBudget(35000);
+        setCurrency({ symbol: '₹', code: 'INR', name: 'Indian Rupee' });
       }
+      setIsSettingsLoaded(true);
     });
 
     return () => {
       unsubExpenses();
       unsubSettings();
     };
-  }, [user]);
+  }, [user?.uid, selectedMonth]);
 
   // Save to local storage for offline / guest use
   useEffect(() => {
@@ -207,26 +224,26 @@ export const AppProvider = ({ children }) => {
     if (!user && !isFirebaseConfigured()) {
       localStorage.setItem(LOCAL_STORAGE_CATEGORIES_KEY, JSON.stringify(categories));
       localStorage.setItem(LOCAL_STORAGE_CATEGORY_MONTHS_KEY, JSON.stringify(categoriesByMonth));
-    } else if (user && isFirebaseConfigured()) {
+    } else if (user && isFirebaseConfigured() && isSettingsLoaded) {
       saveUserSettingsToCloud(user.uid, { categories, categoriesByMonth }).catch(console.error);
     }
-  }, [categories, categoriesByMonth, user]);
+  }, [categories, categoriesByMonth, user, isSettingsLoaded]);
 
   useEffect(() => {
     if (!user && !isFirebaseConfigured()) {
       localStorage.setItem(LOCAL_STORAGE_BUDGET_KEY, monthlyBudget.toString());
-    } else if (user && isFirebaseConfigured()) {
+    } else if (user && isFirebaseConfigured() && isSettingsLoaded) {
       saveUserSettingsToCloud(user.uid, { monthlyBudget }).catch(console.error);
     }
-  }, [monthlyBudget, user]);
+  }, [monthlyBudget, user, isSettingsLoaded]);
 
   useEffect(() => {
     if (!user && !isFirebaseConfigured()) {
       localStorage.setItem(LOCAL_STORAGE_CURRENCY_KEY, JSON.stringify(currency));
-    } else if (user && isFirebaseConfigured()) {
+    } else if (user && isFirebaseConfigured() && isSettingsLoaded) {
       saveUserSettingsToCloud(user.uid, { currency }).catch(console.error);
     }
-  }, [currency, user]);
+  }, [currency, user, isSettingsLoaded]);
 
   // Add Expense
   const addExpense = async (expenseData) => {
@@ -451,12 +468,23 @@ export const AppProvider = ({ children }) => {
     }
   };
 
-  // Clear all data
-  const clearAllData = () => {
-    setExpenses([]);
-    localStorage.removeItem(LOCAL_STORAGE_EXPENSES_KEY);
-    localStorage.removeItem(LOCAL_STORAGE_CATEGORIES_KEY);
-    localStorage.removeItem(LOCAL_STORAGE_CATEGORY_MONTHS_KEY);
+  // Clean logout: resets all in-memory state so no user data ever bleeds over
+  const handleLogout = async () => {
+    try {
+      await logoutUser();
+      setUser(null);
+      setExpenses([]);
+      const initialMonth = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
+      setCategoriesByMonth({ [initialMonth]: cloneCategoryList(DEFAULT_CATEGORIES) });
+      setMonthlyBudget(35000);
+      setCurrency({ symbol: '₹', code: 'INR', name: 'Indian Rupee' });
+      setCloudSynced(false);
+      localStorage.removeItem(LOCAL_STORAGE_EXPENSES_KEY);
+      localStorage.removeItem(LOCAL_STORAGE_CATEGORIES_KEY);
+      localStorage.removeItem(LOCAL_STORAGE_CATEGORY_MONTHS_KEY);
+    } catch (err) {
+      console.error('Logout error:', err);
+    }
   };
 
   return (
@@ -502,8 +530,8 @@ export const AppProvider = ({ children }) => {
       exportToCSV,
       exportToJSON,
       importFromJSON,
-      clearAllData,
-      logoutUser
+      clearAllData: handleLogout,
+      logoutUser: handleLogout
     }}>
       {children}
     </AppContext.Provider>

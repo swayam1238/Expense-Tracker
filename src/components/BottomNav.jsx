@@ -1,6 +1,6 @@
 import React from 'react';
 import { useApp } from '../context/AppContext';
-import { LayoutDashboard, List, PieChart, Tag, Plus } from 'lucide-react';
+import { LayoutDashboard, List, PieChart, Tag, Settings, Plus } from 'lucide-react';
 
 const NAV_ITEMS = [
   { id: 'dashboard', label: 'Home', Icon: LayoutDashboard },
@@ -8,6 +8,7 @@ const NAV_ITEMS = [
   { id: 'add', isAction: true },
   { id: 'analytics', label: 'Stats', Icon: PieChart },
   { id: 'categories', label: 'Categories', Icon: Tag },
+  { id: 'settings', label: 'Settings', Icon: Settings },
 ];
 
 export const BottomNav = () => {
@@ -15,7 +16,7 @@ export const BottomNav = () => {
 
   return (
     <>
-      <nav style={{
+      <nav className="bottom-nav" style={{
         position: 'fixed',
         bottom: 0,
         left: 0,

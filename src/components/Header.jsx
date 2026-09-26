@@ -6,7 +6,8 @@ export const Header = () => {
   const {
     theme, toggleTheme,
     user, logoutUser, setIsAuthModalOpen,
-    selectedMonth, setSelectedMonth
+    selectedMonth, setSelectedMonth,
+    setActiveTab
   } = useApp();
 
   const handlePrev = () => {
@@ -48,6 +49,10 @@ export const Header = () => {
     setSelectedMonth(`${nextYear}-${String(month).padStart(2, '0')}`);
   };
 
+  const userGreeting = user?.displayName
+    ? user.displayName.split(' ')[0]
+    : (user?.email ? user.email.split('@')[0] : 'there');
+
   return (
     <header style={{
       display: 'flex',
@@ -63,16 +68,40 @@ export const Header = () => {
       {/* Left: Auth + month selector */}
       <div className="header-left" style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: '80px', flexWrap: 'wrap' }}>
         {user ? (
-          <button
-            onClick={logoutUser}
-            className="btn btn-ghost"
-            style={{ padding: '6px', width: 36, height: 36, borderRadius: '50%', background: 'var(--accent-soft)' }}
-            title="Sign Out"
-          >
-            <span style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--accent)' }}>
-              {user.email.charAt(0).toUpperCase()}
-            </span>
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <button
+              onClick={() => setActiveTab('settings')}
+              className="btn btn-ghost"
+              style={{
+                padding: 0,
+                width: 36,
+                height: 36,
+                borderRadius: '50%',
+                background: 'var(--accent-soft)',
+                border: '1px solid var(--border-subtle)',
+                display: 'grid',
+                placeItems: 'center',
+                cursor: 'pointer'
+              }}
+              title={`Logged in as ${user.email}. Click to view Settings.`}
+            >
+              <span style={{ fontSize: '0.9rem', fontWeight: 800, color: 'var(--accent)' }}>
+                {user.displayName ? user.displayName.charAt(0).toUpperCase() : user.email?.charAt(0).toUpperCase()}
+              </span>
+            </button>
+            <button
+              onClick={() => {
+                if (window.confirm(`Sign out of ${user.email}?`)) {
+                  logoutUser();
+                }
+              }}
+              className="btn btn-ghost"
+              style={{ padding: '6px', width: 32, height: 32, borderRadius: '50%' }}
+              title="Sign Out"
+            >
+              <LogOut size={16} style={{ color: 'var(--text-muted)' }} />
+            </button>
+          </div>
         ) : (
           <button
             onClick={() => setIsAuthModalOpen(true)}
@@ -115,7 +144,7 @@ export const Header = () => {
         </button>
 
         <div style={{ textAlign: 'center', padding: '0 4px', minWidth: '170px' }}>
-          <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-primary)' }}>Hi Swayam,</div>
+          <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-primary)' }}>Hi {userGreeting},</div>
           <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)', marginBottom: 3 }}>Welcome to your expense tracker</div>
           {isCurrentMonth ? (
             <div style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--accent)' }}>This Month</div>

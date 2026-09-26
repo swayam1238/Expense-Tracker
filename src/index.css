@@ -115,6 +115,22 @@ body {
   flex-direction: column;
 }
 
+.bottom-nav {
+  padding-left: 4px;
+  padding-right: 4px;
+}
+
+@media (max-width: 480px) {
+  .bottom-nav {
+    padding-left: 2px;
+    padding-right: 2px;
+  }
+
+  .bottom-nav span {
+    font-size: 0.56rem !important;
+  }
+}
+
 @media (max-width: 480px) {
   .analytics-grid,
   .categories-grid,

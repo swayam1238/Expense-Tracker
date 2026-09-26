@@ -13,8 +13,11 @@ import {
   Check, 
   ExternalLink,
   Flame,
-  Info
+  Info,
+  Lock,
+  LogOut
 } from 'lucide-react';
+import { lockApp, canUseDeviceLock, isDeviceLockEnabled } from '../utils/appLock';
 
 const AVAILABLE_CURRENCIES = [
   { symbol: '₹', code: 'INR', name: 'Indian Rupee (₹)' },
@@ -34,6 +37,7 @@ export const SettingsView = () => {
     user, 
     cloudSynced, 
     setIsAuthModalOpen,
+    logoutUser,
     exportToJSON, 
     exportToCSV, 
     importFromJSON, 
@@ -153,9 +157,35 @@ export const SettingsView = () => {
               <span>Connect Firebase Account</span>
             </button>
           ) : (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.8rem', color: 'var(--color-success)' }}>
-              <ShieldCheck size={18} />
-              <span>Cloud Firestore Security Rules active (per-user private database)</span>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', width: '100%' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.8rem', color: 'var(--color-success)' }}>
+                <ShieldCheck size={18} />
+                <span>Cloud Firestore Security Rules active (per-user private database)</span>
+              </div>
+              <div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (window.confirm(`Are you sure you want to sign out of ${user.email}?`)) {
+                      logoutUser();
+                    }
+                  }}
+                  className="btn btn-secondary"
+                  style={{
+                    fontSize: '0.85rem',
+                    padding: '9px 16px',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    borderColor: 'var(--danger)',
+                    color: 'var(--danger)',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <LogOut size={16} />
+                  <span>Sign Out ({user.email})</span>
+                </button>
+              </div>
             </div>
           )}
         </div>
@@ -190,6 +220,40 @@ export const SettingsView = () => {
               <li>Tap <strong>"Install app"</strong> or <strong>"Add to Home screen"</strong>.</li>
             </ol>
           </div>
+        </div>
+      </div>
+
+      {/* Device Screen Lock & Biometrics */}
+      <div className="glass-card" style={{ padding: '20px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <ShieldCheck size={20} style={{ color: '#10b981' }} />
+            <h3 style={{ fontSize: '1rem', fontWeight: 700 }}>Phone Screen Lock & Biometrics</h3>
+          </div>
+          <span className="badge" style={{
+            background: canUseDeviceLock() ? 'rgba(16, 185, 129, 0.15)' : 'rgba(148, 163, 184, 0.15)',
+            color: canUseDeviceLock() ? 'var(--color-success)' : 'var(--text-muted)'
+          }}>
+            {canUseDeviceLock() ? 'Active' : 'Unavailable'}
+          </span>
+        </div>
+
+        <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: '1.5', marginBottom: '16px' }}>
+          Your app is secured using your phone's native security: <strong>Fingerprint, Face ID, PIN, pattern, or password</strong>. The old static code 1997 has been removed.
+        </p>
+
+        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+          <button 
+            onClick={() => {
+              lockApp();
+              window.location.reload();
+            }}
+            className="btn btn-secondary"
+            style={{ fontSize: '0.85rem' }}
+          >
+            <Lock size={15} />
+            <span>Lock App Now</span>
+          </button>
         </div>
       </div>
 
