@@ -10,6 +10,7 @@ import { CategoriesView } from './components/CategoriesView';
 import { SettingsView } from './components/SettingsView';
 import { AddExpenseModal } from './components/AddExpenseModal';
 import { AuthModal } from './components/AuthModal';
+import { isFirebaseConfigured, saveUserSettingsToCloud } from './firebase';
 import {
   APP_UNLOCKED_KEY,
   isAppLockEnabled,
@@ -94,8 +95,11 @@ const AppLock = ({ onUnlock, userId }) => {
       return;
     }
     try {
-      await setCustomPasscode(clean, userId);
-      // Passcode is now set — switch to entering it
+      const hash = await setCustomPasscode(clean, userId);
+      // Sync to Firestore so it works across devices
+      if (userId && isFirebaseConfigured()) {
+        saveUserSettingsToCloud(userId, { lockMode: 'passcode', passcodeHash: hash }).catch(console.error);
+      }
       setIsSettingUp(false);
       setSetupPasscode('');
       setSetupConfirm('');
@@ -355,10 +359,24 @@ const AppShell = () => {
     activeTab,
     user,
     isAuthLoading,
-    isUnlocked,
-    setIsUnlocked,
+    lockUserApp,
   } = useApp();
 
+  // Local lock state — initialized only once we know the userId
+  // null = not yet determined, true/false = known
+  const [isUnlocked, setIsUnlocked] = useState(null);
+
+  useEffect(() => {
+    if (user?.uid) {
+      // Check sessionStorage immediately — no async delay
+      setIsUnlocked(isAppUnlocked(user.uid));
+    } else {
+      // Logged out — reset
+      setIsUnlocked(null);
+    }
+  }, [user?.uid]);
+
+  // Step 1: Auth loading
   if (isAuthLoading) {
     return (
       <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', color: 'var(--text-muted)', background: 'var(--bg-base)' }}>
@@ -367,6 +385,7 @@ const AppShell = () => {
     );
   }
 
+  // Step 2: Not logged in — show login FIRST, never the lock screen
   if (!user) {
     return (
       <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', padding: 24, background: 'var(--bg-base)' }}>
@@ -375,11 +394,26 @@ const AppShell = () => {
     );
   }
 
-  // Show lock screen per-user (after login so we know the uid)
-  if (isAppLockEnabled(user.uid) && !isUnlocked) {
-    return <AppLock onUnlock={() => setIsUnlocked(true)} userId={user.uid} />;
+  // Step 3: User logged in but lock state not yet determined (brief tick)
+  if (isUnlocked === null) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', color: 'var(--text-muted)', background: 'var(--bg-base)' }}>
+        Loading…
+      </div>
+    );
   }
 
+  // Step 4: Logged in, lock enabled, not yet unlocked — show lock screen
+  if (isAppLockEnabled(user.uid) && !isUnlocked) {
+    return (
+      <AppLock
+        onUnlock={() => setIsUnlocked(true)}
+        userId={user.uid}
+      />
+    );
+  }
+
+  // Step 5: Logged in and unlocked (or no lock) — show the app
   return (
     <>
       <Header />
@@ -389,7 +423,7 @@ const AppShell = () => {
         {activeTab === 'transactions' && <TransactionsView />}
         {activeTab === 'analytics' && <AnalyticsView />}
         {activeTab === 'categories' && <CategoriesView />}
-        {activeTab === 'settings' && <SettingsView />}
+        {activeTab === 'settings' && <SettingsView onLock={() => setIsUnlocked(false)} />}
       </main>
 
       <BottomNav />

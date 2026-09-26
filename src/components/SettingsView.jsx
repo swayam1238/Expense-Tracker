@@ -42,7 +42,7 @@ const AVAILABLE_CURRENCIES = [
   { symbol: 'AED', code: 'AED', name: 'UAE Dirham (AED)' }
 ];
 
-export const SettingsView = () => {
+export const SettingsView = ({ onLock }) => {
   const { 
     currency, 
     setCurrency, 
@@ -50,7 +50,6 @@ export const SettingsView = () => {
     cloudSynced, 
     setIsAuthModalOpen,
     logoutUser,
-    lockUserApp,
     exportToJSON, 
     exportToCSV, 
     importFromJSON, 
@@ -445,7 +444,10 @@ export const SettingsView = () => {
           {currentLockMode !== 'none' && (
             <button 
               type="button"
-              onClick={lockUserApp}
+              onClick={() => {
+                lockApp(user?.uid);
+                if (onLock) onLock();
+              }}
               className="btn btn-secondary"
               style={{ fontSize: '0.85rem', marginLeft: 'auto' }}
             >
