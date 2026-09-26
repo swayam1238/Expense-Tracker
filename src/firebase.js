@@ -21,7 +21,8 @@ import {
   query, 
   where, 
   orderBy, 
-  serverTimestamp 
+  serverTimestamp,
+  deleteField
 } from 'firebase/firestore';
 
 // Reads credentials from Vite environment variables
@@ -158,4 +159,4 @@ export const saveUserSettingsToCloud = async (userId, settingsData) => {
   }, { merge: true });
 };
 
-export { auth, db };
+export { auth, db, deleteField };

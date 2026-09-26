@@ -16,7 +16,6 @@ import {
   isAllowedUser
 } from '../firebase';
 import {
-  isAppUnlocked,
   lockApp,
   getLockModeKey,
   getPasscodeHashKey
@@ -55,13 +54,6 @@ const migrateSavedCategorySnapshots = (categoryMap) => Object.fromEntries(
   })
 );
 
-const getMonthKeyFromDate = (dateLike) => {
-  if (!dateLike) return null;
-  const date = new Date(dateLike);
-  if (Number.isNaN(date.getTime())) return null;
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-};
-
 const getLatestCategoriesSnapshot = (categoryMap, monthKey) => {
   const monthKeys = Object.keys(categoryMap || {}).filter(key => key <= monthKey).sort();
   const fallbackKey = monthKeys[monthKeys.length - 1];
@@ -92,22 +84,6 @@ export const AppProvider = ({ children }) => {
   const [authError, setAuthError] = useState('');
   const [cloudSynced, setCloudSynced] = useState(false);
   const [isSettingsLoaded, setIsSettingsLoaded] = useState(false);
-  const [isUnlocked, setIsUnlocked] = useState(false);
-
-  useEffect(() => {
-    if (user?.uid) {
-      setIsUnlocked(isAppUnlocked(user.uid));
-    } else {
-      setIsUnlocked(false);
-    }
-  }, [user?.uid]);
-
-  const lockUserApp = () => {
-    if (user?.uid) {
-      lockApp(user.uid);
-    }
-    setIsUnlocked(false);
-  };
 
   // Currency
   const [currency, setCurrency] = useState(() => {
@@ -201,8 +177,14 @@ export const AppProvider = ({ children }) => {
       setCloudSynced(true);
     });
 
+    // Fallback timer so offline/slow connections don't hang
+    const settingsTimeout = setTimeout(() => {
+      setIsSettingsLoaded(true);
+    }, 2000);
+
     // Subscribe to user settings (budget, categories, currency) for this specific user.uid
     const unsubSettings = subscribeUserSettings(user.uid, (cloudSettings) => {
+      clearTimeout(settingsTimeout);
       if (cloudSettings) {
         if (cloudSettings.categoriesByMonth && typeof cloudSettings.categoriesByMonth === 'object') {
           setCategoriesByMonth(migrateSavedCategorySnapshots(cloudSettings.categoriesByMonth));
@@ -216,6 +198,8 @@ export const AppProvider = ({ children }) => {
         }
         if (cloudSettings.passcodeHash) {
           localStorage.setItem(getPasscodeHashKey(user.uid), cloudSettings.passcodeHash);
+        } else {
+          localStorage.removeItem(getPasscodeHashKey(user.uid));
         }
       } else {
         // Brand new user: initialize clean default settings
@@ -227,6 +211,7 @@ export const AppProvider = ({ children }) => {
     });
 
     return () => {
+      clearTimeout(settingsTimeout);
       unsubExpenses();
       unsubSettings();
     };
@@ -502,7 +487,6 @@ export const AppProvider = ({ children }) => {
       if (user?.uid) {
         lockApp(user.uid);
       }
-      setIsUnlocked(false);
       await logoutUser();
       setUser(null);
       setExpenses([]);
@@ -541,6 +525,7 @@ export const AppProvider = ({ children }) => {
       user,
       authError,
       isAuthLoading,
+      isSettingsLoaded,
       cloudSynced,
       currency,
       setCurrency,
@@ -549,9 +534,6 @@ export const AppProvider = ({ children }) => {
       categories,
       categoriesByMonth,
       expenses,
-      isUnlocked,
-      setIsUnlocked,
-      lockUserApp,
       
       // Actions
       addExpense,

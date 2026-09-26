@@ -360,21 +360,23 @@ const AppShell = () => {
     activeTab,
     user,
     isAuthLoading,
+    isSettingsLoaded,
   } = useApp();
 
-  // Local lock state — initialized only once we know the userId
+  // Local lock state — initialized only once user and settings are ready
   // null = not yet determined, true/false = known
   const [isUnlocked, setIsUnlocked] = useState(null);
 
   useEffect(() => {
     if (user?.uid) {
-      // Check sessionStorage immediately — no async delay
-      setIsUnlocked(isAppUnlocked(user.uid));
+      if (isSettingsLoaded) {
+        setIsUnlocked(isAppUnlocked(user.uid));
+      }
     } else {
       // Logged out — reset
       setIsUnlocked(null);
     }
-  }, [user?.uid]);
+  }, [user?.uid, isSettingsLoaded]);
 
   // Step 1: Auth loading
   if (isAuthLoading) {
@@ -394,8 +396,8 @@ const AppShell = () => {
     );
   }
 
-  // Step 3: User logged in but lock state not yet determined (brief tick)
-  if (isUnlocked === null) {
+  // Step 3: User logged in but settings or lock state not yet determined
+  if (!isSettingsLoaded || isUnlocked === null) {
     return (
       <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', color: 'var(--text-muted)', background: 'var(--bg-base)' }}>
         Loading…

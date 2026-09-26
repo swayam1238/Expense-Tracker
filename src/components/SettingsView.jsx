@@ -1,8 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
-import { isFirebaseConfigured, saveUserSettingsToCloud } from '../firebase';
+import { isFirebaseConfigured, saveUserSettingsToCloud, deleteField } from '../firebase';
 import { 
-  Settings as SettingsIcon, 
   DollarSign, 
   Cloud, 
   Download, 
@@ -11,9 +10,7 @@ import {
   Smartphone, 
   ShieldCheck, 
   Check, 
-  ExternalLink,
   Flame,
-  Info,
   Lock,
   LogOut,
   KeyRound,
@@ -23,7 +20,6 @@ import {
 } from 'lucide-react';
 import { 
   lockApp, 
-  canUseDeviceLock, 
   getLockMode, 
   setLockMode, 
   hasCustomPasscode, 
@@ -47,15 +43,12 @@ export const SettingsView = ({ onLock }) => {
     currency, 
     setCurrency, 
     user, 
-    cloudSynced, 
     setIsAuthModalOpen,
     logoutUser,
     exportToJSON, 
     exportToCSV, 
     importFromJSON, 
-    clearAllData,
-    expenses,
-    categories
+    clearAllData
   } = useApp();
 
   const fileInputRef = useRef(null);
@@ -130,7 +123,7 @@ export const SettingsView = ({ onLock }) => {
       const nextMode = getLockMode(user?.uid);
       setCurrentLockMode(nextMode);
       if (user?.uid && isFirebaseConfigured()) {
-        saveUserSettingsToCloud(user.uid, { lockMode: nextMode, passcodeHash: null }).catch(console.error);
+        saveUserSettingsToCloud(user.uid, { lockMode: nextMode, passcodeHash: deleteField() }).catch(console.error);
       }
     }
   };
