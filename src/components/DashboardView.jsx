@@ -1,48 +1,14 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { normalizePaymentMethod } from '../constants';
 import { Plus, TrendingDown, Wallet, PiggyBank, CreditCard } from 'lucide-react';
-
-/* ── SVG Donut Pie Chart ── */
-const DONUT_R = 88;
-const DONUT_STROKE = 22;
-const DONUT_CX = 110;
-const DONUT_CY = 110;
-const CIRCUMFERENCE = 2 * Math.PI * DONUT_R;
-
-function PieSlice({ offset, percent, color, onHover, onLeave, isHighlighted }) {
-  const dashLen = (percent / 100) * CIRCUMFERENCE;
-  return (
-    <circle
-      cx={DONUT_CX}
-      cy={DONUT_CY}
-      r={DONUT_R}
-      fill="none"
-      stroke={color}
-      strokeWidth={isHighlighted ? DONUT_STROKE + 4 : DONUT_STROKE}
-      strokeDasharray={`${dashLen} ${CIRCUMFERENCE}`}
-      strokeDashoffset={-offset}
-      strokeLinecap="round"
-      style={{
-        transition: 'stroke-width 0.2s, opacity 0.2s',
-        cursor: 'pointer',
-        opacity: isHighlighted === false ? 0.35 : 1,
-        transformOrigin: `${DONUT_CX}px ${DONUT_CY}px`,
-      }}
-      onMouseEnter={onHover}
-      onMouseLeave={onLeave}
-      onTouchStart={onHover}
-    />
-  );
-}
+import { ChartTypeControl, ExpenseChart } from './ExpenseChart';
 
 export const DashboardView = () => {
   const {
-    expenses, categories, monthlyBudget, currency,
+    expenses, categories, monthlyBudget, currency, expenseChartType, setExpenseChartType,
     selectedMonth, setEditingExpense, setIsAddModalOpen, setActiveTab
   } = useApp();
-
-  const [hovered, setHovered] = useState(null); // category id
 
   // Filter by selected month
   const monthlyExpenses = useMemo(() =>
@@ -79,32 +45,6 @@ export const DashboardView = () => {
     return amounts;
   }, [monthlyExpenses]);
 
-  // Build category data for pie — ALL categories including savings
-  const catData = useMemo(() => {
-    const categoryData = categories
-      .map(cat => ({ ...cat, amt: categoryAmounts.get(cat.id) || 0 }))
-      .filter(c => c.amt > 0)
-      .sort((a, b) => b.amt - a.amt);
-
-    const knownCategoryIds = new Set(categories.map(cat => cat.id));
-    const uncategorizedAmount = monthlyExpenses
-      .filter(expense => !knownCategoryIds.has(expense.categoryId))
-      .reduce((sum, expense) => sum + (Number(expense.amount) || 0), 0);
-
-    if (uncategorizedAmount > 0) {
-      categoryData.push({
-        id: 'cat-uncategorized',
-        name: 'Uncategorized',
-        icon: '📌',
-        color: '#94a3b8',
-        amt: uncategorizedAmount
-      });
-      categoryData.sort((a, b) => b.amt - a.amt);
-    }
-
-    return categoryData;
-  }, [categories, monthlyExpenses, categoryAmounts]);
-
   const categoryLegend = useMemo(() => {
     const legendData = categories
       .map(cat => ({ ...cat, amt: categoryAmounts.get(cat.id) || 0 }))
@@ -129,19 +69,6 @@ export const DashboardView = () => {
     return legendData;
   }, [categories, monthlyExpenses, categoryAmounts]);
 
-  // Build pie slices — use grandTotal so savings slice is proportional
-  const slices = useMemo(() => {
-    let offset = 0;
-    return catData.map(cat => {
-      const percent = grandTotal > 0 ? (cat.amt / grandTotal) * 100 : 0;
-      const slice = { ...cat, percent, offset };
-      offset += (percent / 100) * CIRCUMFERENCE;
-      return slice;
-    });
-  }, [catData, grandTotal]);
-
-  const hoveredCat = hovered ? catData.find(c => c.id === hovered) : null;
-
   // Recent transactions — all (including savings), latest 5
   const recent = useMemo(() =>
     monthlyExpenses.slice(0, 5), [monthlyExpenses]);
@@ -157,7 +84,9 @@ export const DashboardView = () => {
         flexDirection: 'column',
         alignItems: 'center',
       }}>
-
+        <div style={{ display: 'flex', justifyContent: 'flex-end', width: '100%', marginBottom: 12 }}>
+          <ChartTypeControl value={expenseChartType} onChange={setExpenseChartType} label="Dashboard chart type" />
+        </div>
         {grandTotal === 0 ? (
           /* Empty State */
           <div style={{ padding: '32px 20px', textAlign: 'center' }}>
@@ -182,110 +111,33 @@ export const DashboardView = () => {
             </button>
           </div>
         ) : (
-          <>
-            {/* SVG Donut */}
-            <div style={{ position: 'relative', width: 220, height: 220 }}>
-              <svg width={220} height={220} viewBox={`0 0 ${DONUT_CX * 2} ${DONUT_CY * 2}`} style={{ transform: 'rotate(-90deg)' }}>
-                {/* Background ring */}
-                <circle
-                  cx={DONUT_CX} cy={DONUT_CY} r={DONUT_R}
-                  fill="none" stroke="var(--bg-base)"
-                  strokeWidth={DONUT_STROKE}
-                />
-                {/* Slices */}
-                {slices.map(s => (
-                  <PieSlice
-                    key={s.id}
-                    offset={s.offset}
-                    percent={s.percent}
-                    color={s.color}
-                    isHighlighted={hovered === null ? null : hovered === s.id}
-                    onHover={() => setHovered(s.id)}
-                    onLeave={() => setHovered(null)}
-                  />
-                ))}
-              </svg>
-
-              {/* Center Text */}
-              <div style={{
-                position: 'absolute', inset: 0,
-                display: 'flex', flexDirection: 'column',
-                alignItems: 'center', justifyContent: 'center',
-                pointerEvents: 'none',
-                animation: 'popIn 0.3s ease',
-              }}>
-                {hoveredCat ? (
-                  <>
-                    <span style={{ fontSize: '1.4rem', marginBottom: 2 }}>{hoveredCat.icon}</span>
-                    <span className="mono" style={{ fontSize: '1.2rem', fontWeight: 800, color: hoveredCat.color }}>
-                      {currency.symbol}{hoveredCat.amt.toLocaleString()}
-                    </span>
-                    <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600, maxWidth: 90, textAlign: 'center', lineHeight: 1.2 }}>
-                      {hoveredCat.name}
-                    </span>
-                  </>
-                ) : (
-                  <>
-                    <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                      Total This Month
-                    </span>
-                    <span className="mono" style={{ fontSize: '1.55rem', fontWeight: 900, letterSpacing: '-1px', color: 'var(--text-primary)', marginTop: 2 }}>
-                      {currency.symbol}{grandTotal.toLocaleString()}
-                    </span>
-                    {monthlyBudget > 0 && (
-                      <span style={{ fontSize: '0.72rem', color: totalSpent > monthlyBudget ? 'var(--danger)' : 'var(--success)', fontWeight: 600, marginTop: 2 }}>
-                        {totalSpent > monthlyBudget
-                          ? `${currency.symbol}${(totalSpent - monthlyBudget).toLocaleString()} over`
-                          : `${currency.symbol}${(monthlyBudget - totalSpent).toLocaleString()} left`}
-                      </span>
-                    )}
-                  </>
-                )}
+          <div style={{ width: '100%' }}>
+            <ExpenseChart
+              data={categoryLegend.map(category => ({ ...category, value: category.amt }))}
+              type={expenseChartType}
+              currencySymbol={currency.symbol}
+              centerLabel="Total This Month"
+              centerFooter={monthlyBudget > 0
+                ? (totalSpent > monthlyBudget
+                  ? `${currency.symbol}${(totalSpent - monthlyBudget).toLocaleString()} over budget`
+                  : `${currency.symbol}${(monthlyBudget - totalSpent).toLocaleString()} left`)
+                : ''}
+            />
+            {expenseChartType !== 'bar' && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'center', marginTop: 14, padding: '0 8px' }}>
+                {categoryLegend.map(category => {
+                  const percent = grandTotal > 0 ? category.amt / grandTotal * 100 : 0;
+                  return (
+                    <div key={category.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 10px', borderRadius: 'var(--radius-full)', background: 'var(--bg-input)' }}>
+                      <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: '50%', background: category.color }} />
+                      <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>{category.name}</span>
+                      <span className="mono" style={{ fontSize: '0.72rem', fontWeight: 700, color: category.color }}>{percent.toFixed(0)}%</span>
+                    </div>
+                  );
+                })}
               </div>
-            </div>
-
-            {/* Category Legend */}
-            <div style={{
-              display: 'flex',
-              flexWrap: 'wrap',
-              gap: '8px',
-              justifyContent: 'center',
-              marginTop: 16,
-              padding: '0 8px',
-            }}>
-              {categoryLegend.map(s => {
-                const percent = grandTotal > 0 ? (s.amt / grandTotal) * 100 : 0;
-                return (
-                <button
-                  key={s.id}
-                  onMouseEnter={() => setHovered(s.id)}
-                  onMouseLeave={() => setHovered(null)}
-                  onClick={() => setHovered(hovered === s.id ? null : s.id)}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 6,
-                    padding: '5px 10px',
-                    borderRadius: 'var(--radius-full)',
-                    background: hovered === s.id ? `${s.color}18` : 'var(--bg-input)',
-                    border: `1.5px solid ${hovered === s.id ? s.color : 'transparent'}`,
-                    cursor: 'pointer',
-                    transition: 'all 0.15s',
-                    fontFamily: 'var(--font)',
-                  }}
-                >
-                  <span style={{ fontSize: '0.85rem' }}>{s.icon}</span>
-                  <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
-                    {s.name}
-                  </span>
-                  <span className="mono" style={{ fontSize: '0.72rem', fontWeight: 700, color: s.color }}>
-                    {percent.toFixed(0)}%
-                  </span>
-                </button>
-                );
-              })}
-            </div>
-          </>
+            )}
+          </div>
         )}
       </div>
 

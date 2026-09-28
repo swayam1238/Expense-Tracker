@@ -6,7 +6,7 @@ A private, mobile-first expense tracker (PWA) built with React and Firebase. Tra
 
 - **Dashboard** — monthly totals, budget progress, savings vs spend, category donut chart
 - **Transactions** — search and filter by month
-- **Analytics** — spending breakdowns and trends
+- **Analytics** — category and monthly total/category comparisons (prior month, 3/6/12 months, or custom months), with shared per-user Pie/Bar/Line charts and category change labels
 - **Categories** — per-month categories with icons, colors, and budgets
 - **Settings** — currency, cloud sync status, JSON/CSV backup, PWA install hints
 - **Magic Notes** — paste free-text lines to parse into expenses
