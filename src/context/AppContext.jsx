@@ -112,10 +112,16 @@ export const AppProvider = ({ children }) => {
   const [settingsSyncError, setSettingsSyncError] = useState('');
   const [settingsRetryVersion, setSettingsRetryVersion] = useState(0);
   const currency = DEFAULT_CURRENCY;
-  const [expenseChartType, setExpenseChartType] = useState(() => {
+  const [expenseChartType, setExpenseChartTypeState] = useState(() => {
     const saved = readStoredValue(LOCAL_STORAGE_EXPENSE_CHART_TYPE_KEY);
     return CHART_TYPES.has(saved) ? saved : 'pie';
   });
+  const pendingExpenseChartTypeRef = useRef(null);
+  const setExpenseChartType = useCallback((chartType) => {
+    const nextChartType = CHART_TYPES.has(chartType) ? chartType : 'pie';
+    pendingExpenseChartTypeRef.current = nextChartType;
+    setExpenseChartTypeState(nextChartType);
+  }, []);
 
   const [monthlyBudget, setMonthlyBudget] = useState(() => {
     const saved = readStoredValue(LOCAL_STORAGE_BUDGET_KEY);
@@ -192,10 +198,12 @@ export const AppProvider = ({ children }) => {
 
   useEffect(() => {
     if (!user) {
+      pendingExpenseChartTypeRef.current = null;
       applyLocalGuestDefaults();
       return;
     }
 
+    pendingExpenseChartTypeRef.current = null;
     lastPersistedSettingsRef.current = '';
     setSettingsLoadError('');
     setSettingsSyncError('');
@@ -221,6 +229,13 @@ export const AppProvider = ({ children }) => {
         return;
       }
       setSettingsLoadError('');
+
+      const pendingChartType = pendingExpenseChartTypeRef.current;
+      if (pendingChartType && cloudSettings?.expenseChartType !== pendingChartType) {
+        setIsSettingsLoaded(true);
+        return;
+      }
+      if (pendingChartType) pendingExpenseChartTypeRef.current = null;
 
       const monthKey = selectedMonthRef.current;
       let nextCategoriesByMonth = categoriesByMonthRef.current;
@@ -259,7 +274,7 @@ export const AppProvider = ({ children }) => {
         lastPersistedSettingsRef.current = incoming;
         setCategoriesByMonth(nextCategoriesByMonth);
         setMonthlyBudget(nextBudget);
-        setExpenseChartType(nextExpenseChartType);
+        setExpenseChartTypeState(nextExpenseChartType);
       }
 
       setIsSettingsLoaded(true);
@@ -305,6 +320,9 @@ export const AppProvider = ({ children }) => {
       saveUserSettingsToCloud(user.uid, { categoriesByMonth, monthlyBudget, currency, expenseChartType })
         .then(() => {
           if (!isActive) return;
+          if (pendingExpenseChartTypeRef.current === expenseChartType) {
+            pendingExpenseChartTypeRef.current = null;
+          }
           lastPersistedSettingsRef.current = serialized;
           setSettingsSyncError('');
         })
