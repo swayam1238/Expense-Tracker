@@ -245,17 +245,15 @@ export const AddExpenseModal = () => {
                   >
                     <span style={{ fontSize: '1.4rem', lineHeight: 1 }}>{cat.icon}</span>
                     <span style={{
-                      fontSize: '0.65rem',
+                      fontSize: '0.62rem',
                       fontWeight: 600,
                       color: isSel ? cat.color : 'var(--text-muted)',
                       textAlign: 'center',
                       lineHeight: 1.2,
                       maxWidth: '100%',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
+                      overflowWrap: 'anywhere',
                     }}>
-                      {cat.name.split(' ')[0]}
+                      {cat.name}
                     </span>
                   </button>
                 );

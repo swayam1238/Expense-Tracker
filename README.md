@@ -11,7 +11,7 @@ A private, mobile-first expense tracker (PWA) built with React and Firebase. Tra
 - **Settings** — currency, cloud sync status, JSON/CSV backup, PWA install hints
 - **Magic Notes** — paste free-text lines to parse into expenses
 - **App lock** — optional access code (hash stored in env, not in source) plus WebAuthn biometrics on supported devices
-- **Auth** — Firebase Google or email sign-in with Firestore rules restricted to an allowed account
+- **Auth** — Firebase Google sign-in and self-service email/password accounts, with Firestore data isolated per user
 
 ## Prerequisites
 
@@ -75,7 +75,7 @@ Add the output to `.env` as `VITE_APP_LOCK_SHA256=...` and restart the dev serve
 
 **Note:** A static SPA cannot hide secrets from someone with your built bundle. The lock is a casual privacy layer on the device; **Firebase Authentication and Firestore rules** protect cloud data.
 
-Allowed sign-in email and verification requirements are enforced in `src/firebase.js` and `firestore.rules`. Update both if you change accounts.
+Enable the **Email/Password** provider in Firebase Console under **Authentication → Sign-in method** to allow self-service registration. Enable Google there too if you want Google sign-in. Firestore rules scope each account to its own `users/{uid}` data.
 
 ## Scripts
 

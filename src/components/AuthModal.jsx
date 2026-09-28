@@ -3,6 +3,7 @@ import { useApp } from '../context/AppContext';
 import { 
   loginWithGoogle, 
   loginWithEmail, 
+  registerWithEmail,
   isFirebaseConfigured,
   isAllowedUser,
   logoutUser
@@ -19,6 +20,7 @@ export const AuthModal = ({ embedded = false }) => {
   const { isAuthModalOpen, setIsAuthModalOpen } = useApp();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [mode, setMode] = useState('signin');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -36,7 +38,9 @@ export const AuthModal = ({ embedded = false }) => {
     setLoading(true);
 
     try {
-      const credential = await loginWithEmail(email.trim(), password);
+      const credential = mode === 'signup'
+        ? await registerWithEmail(email.trim(), password)
+        : await loginWithEmail(email.trim(), password);
       if (!isAllowedUser(credential.user)) {
         await logoutUser();
         throw new Error('Access denied. User not authorized.');
@@ -45,11 +49,18 @@ export const AuthModal = ({ embedded = false }) => {
     } catch (err) {
       console.warn('Sign-in error:', err);
       let msg = 'Sign-in failed. Please check your email and password.';
-      if (
+      if (err.code === 'auth/email-already-in-use') {
+        msg = 'An account already exists for this email. Sign in instead.';
+      } else if (err.code === 'auth/weak-password') {
+        msg = 'Choose a password with at least 6 characters.';
+      } else if (err.code === 'auth/operation-not-allowed') {
+        msg = 'Email and password accounts are disabled in Firebase Authentication. Enable the Email/Password provider in your Firebase project.';
+      } else if (err.code === 'auth/invalid-email') {
+        msg = 'Enter a valid email address.';
+      } else if (
         err.code === 'auth/invalid-credential' || 
         err.code === 'auth/user-not-found' || 
-        err.code === 'auth/wrong-password' ||
-        err.code === 'auth/invalid-email'
+        err.code === 'auth/wrong-password'
       ) {
         msg = 'Incorrect email or password. Please verify your credentials.';
       } else if (err.code === 'auth/too-many-requests') {
@@ -120,10 +131,10 @@ export const AuthModal = ({ embedded = false }) => {
           </div>
           <div>
             <h3 style={{ fontSize: '1.25rem', fontWeight: 800, letterSpacing: '-0.02em' }}>
-              Sign In to Cloud
+              {mode === 'signup' ? 'Create Your Account' : 'Sign In to Cloud'}
             </h3>
             <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-              Access your personal expenses & budgets
+              {mode === 'signup' ? 'Start tracking with your private account' : 'Access your personal expenses & budgets'}
             </p>
           </div>
         </div>
@@ -199,7 +210,7 @@ export const AuthModal = ({ embedded = false }) => {
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', margin: '14px 0 18px' }}>
             <div style={{ flex: 1, height: '1px', background: 'var(--border-subtle)' }} />
-            <span style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--text-muted)', letterSpacing: '0.05em' }}>OR SIGN IN WITH EMAIL</span>
+            <span style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--text-muted)', letterSpacing: '0.05em' }}>OR USE EMAIL</span>
             <div style={{ flex: 1, height: '1px', background: 'var(--border-subtle)' }} />
           </div>
 
@@ -231,6 +242,7 @@ export const AuthModal = ({ embedded = false }) => {
                 <input
                   type="password"
                   required
+                  minLength={mode === 'signup' ? 6 : undefined}
                   placeholder="••••••••"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
@@ -246,7 +258,7 @@ export const AuthModal = ({ embedded = false }) => {
               className="btn btn-primary"
               style={{ width: '100%', marginTop: '6px', padding: '12px', fontWeight: 700 }}
             >
-              {loading ? 'Signing In…' : 'Sign In'}
+              {loading ? (mode === 'signup' ? 'Creating Account…' : 'Signing In…') : (mode === 'signup' ? 'Create Account' : 'Sign In')}
             </button>
           </form>
 
@@ -257,7 +269,32 @@ export const AuthModal = ({ embedded = false }) => {
             marginTop: '16px',
             lineHeight: 1.4
           }}>
-            🔒 Only authorized accounts set up in Firebase can access this private tracker.
+            {mode === 'signup'
+              ? 'Your expenses and settings are private to your Firebase account.'
+              : 'New to the tracker? '}
+            {mode === 'signin' && (
+              <button
+                type="button"
+                onClick={() => { setMode('signup'); setError(''); }}
+                disabled={loading}
+                style={{ border: 0, padding: 0, background: 'none', color: 'var(--accent)', font: 'inherit', fontWeight: 700, cursor: 'pointer' }}
+              >
+                Create an account
+              </button>
+            )}
+            {mode === 'signup' && (
+              <>
+                {' '}Already registered?{' '}
+                <button
+                  type="button"
+                  onClick={() => { setMode('signin'); setError(''); }}
+                  disabled={loading}
+                  style={{ border: 0, padding: 0, background: 'none', color: 'var(--accent)', font: 'inherit', fontWeight: 700, cursor: 'pointer' }}
+                >
+                  Sign in
+                </button>
+              </>
+            )}
           </p>
         </div>
       )}
