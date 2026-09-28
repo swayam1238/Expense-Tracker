@@ -2,7 +2,6 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { isFirebaseConfigured, saveUserSettingsToCloud, deleteField } from '../firebase';
 import { 
-  DollarSign, 
   Cloud, 
   Download, 
   Upload, 
@@ -27,22 +26,13 @@ import {
   removeCustomPasscode 
 } from '../utils/appLock';
 
-const AVAILABLE_CURRENCIES = [
-  { symbol: '₹', code: 'INR', name: 'Indian Rupee (₹)' },
-  { symbol: '$', code: 'USD', name: 'US Dollar ($)' },
-  { symbol: '€', code: 'EUR', name: 'Euro (€)' },
-  { symbol: '£', code: 'GBP', name: 'British Pound (£)' },
-  { symbol: 'C$', code: 'CAD', name: 'Canadian Dollar (C$)' },
-  { symbol: 'A$', code: 'AUD', name: 'Australian Dollar (A$)' },
-  { symbol: '¥', code: 'JPY', name: 'Japanese Yen (¥)' },
-  { symbol: 'AED', code: 'AED', name: 'UAE Dirham (AED)' }
-];
-
 export const SettingsView = ({ onLock }) => {
   const { 
-    currency, 
-    setCurrency, 
     user, 
+    expenseSyncError,
+    settingsLoadError,
+    settingsSyncError,
+    retrySettingsSync,
     setIsAuthModalOpen,
     logoutUser,
     exportToJSON, 
@@ -133,8 +123,8 @@ export const SettingsView = ({ onLock }) => {
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (event) => {
-      const result = importFromJSON(event.target.result);
+    reader.onload = async (event) => {
+      const result = await importFromJSON(event.target.result);
       if (result.success) {
         setImportStatus({ type: 'success', message: `Imported ${result.count} expenses successfully!` });
       } else {
@@ -145,10 +135,13 @@ export const SettingsView = ({ onLock }) => {
     reader.readAsText(file);
   };
 
-  const handleWipe = () => {
-    if (window.confirm('Are you sure you want to clear all expenses? This cannot be undone unless you have a JSON backup.')) {
-      clearAllData();
-      alert('All local expenses have been cleared.');
+  const handleWipe = async () => {
+    if (!window.confirm('Are you sure you want to delete all expenses from this account? This cannot be undone unless you have a JSON backup.')) return;
+    try {
+      await clearAllData();
+      alert('All expenses have been cleared.');
+    } catch (error) {
+      alert(`Could not clear expenses: ${error.message || 'Check your connection and try again.'}`);
     }
   };
 
@@ -158,48 +151,8 @@ export const SettingsView = ({ onLock }) => {
       <div className="glass-card" style={{ padding: '18px 20px' }}>
         <h2 style={{ fontSize: '1.25rem', fontWeight: 700 }}>Settings & Cloud Sync</h2>
         <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-          Manage your currency, cloud database connection, backups, and mobile installation.
+          Manage your cloud database connection, backups, and mobile installation. All amounts are shown in INR.
         </p>
-      </div>
-
-      {/* Currency Preferences */}
-      <div className="glass-card" style={{ padding: '20px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px' }}>
-          <DollarSign size={20} style={{ color: 'var(--accent-primary)' }} />
-          <h3 style={{ fontSize: '1rem', fontWeight: 700 }}>Default Currency</h3>
-        </div>
-
-        <div className="settings-grid" style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
-          gap: '10px'
-        }}>
-          {AVAILABLE_CURRENCIES.map(curr => {
-            const isSelected = currency.code === curr.code;
-            return (
-              <button
-                key={curr.code}
-                onClick={() => setCurrency(curr)}
-                style={{
-                  background: isSelected ? 'var(--accent-primary)' : 'var(--bg-primary)',
-                  color: isSelected ? '#ffffff' : 'var(--text-primary)',
-                  border: `1px solid ${isSelected ? 'var(--accent-primary)' : 'var(--border-subtle)'}`,
-                  padding: '10px 14px',
-                  borderRadius: 'var(--radius-md)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  cursor: 'pointer',
-                  fontWeight: 600,
-                  fontSize: '0.85rem'
-                }}
-              >
-                <span>{curr.name}</span>
-                {isSelected && <Check size={16} />}
-              </button>
-            );
-          })}
-        </div>
       </div>
 
       {/* Cloud Database (Firebase) Status */}
@@ -224,6 +177,36 @@ export const SettingsView = ({ onLock }) => {
             <>You are currently using <strong>Local Storage mode</strong>. Your data is stored safely in this browser on your device. Connect to Firebase to sync seamlessly between your phone and laptop.</>
           )}
         </p>
+
+        {(expenseSyncError || settingsLoadError || settingsSyncError) && (
+          <div role="alert" style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 12,
+            padding: '10px 12px',
+            marginBottom: 16,
+            borderRadius: 'var(--radius-md)',
+            background: 'rgba(239, 68, 68, 0.1)',
+            color: 'var(--danger)',
+            fontSize: '0.82rem'
+          }}>
+            <div style={{ display: 'grid', gap: 4 }}>
+              {expenseSyncError && <span>Expenses could not load: {expenseSyncError}</span>}
+              {settingsLoadError && <span>Settings could not load: {settingsLoadError}</span>}
+              {settingsSyncError && <span>Settings could not save: {settingsSyncError}</span>}
+            </div>
+            {settingsLoadError ? (
+              <button type="button" onClick={() => window.location.reload()} className="btn btn-secondary" style={{ flexShrink: 0 }}>
+                Reload
+              </button>
+            ) : settingsSyncError ? (
+              <button type="button" onClick={retrySettingsSync} className="btn btn-secondary" style={{ flexShrink: 0 }}>
+                Retry
+              </button>
+            ) : null}
+          </div>
+        )}
 
         <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
           {!user ? (
@@ -509,7 +492,7 @@ export const SettingsView = ({ onLock }) => {
             style={{ fontSize: '0.85rem' }}
           >
             <Trash2 size={16} />
-            <span>Wipe Local Data</span>
+            <span>Delete All Expenses</span>
           </button>
         </div>
       </div>

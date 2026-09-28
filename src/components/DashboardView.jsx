@@ -71,22 +71,25 @@ export const DashboardView = () => {
   // Grand total for pie = spending + savings
   const grandTotal = totalSpent + totalSaved;
 
+  const categoryAmounts = useMemo(() => {
+    const amounts = new Map();
+    for (const expense of monthlyExpenses) {
+      amounts.set(expense.categoryId, (amounts.get(expense.categoryId) || 0) + (Number(expense.amount) || 0));
+    }
+    return amounts;
+  }, [monthlyExpenses]);
+
   // Build category data for pie — ALL categories including savings
   const catData = useMemo(() => {
     const categoryData = categories
-      .map(cat => {
-        const amt = monthlyExpenses
-          .filter(e => e.categoryId === cat.id)
-          .reduce((s, e) => s + (e.amount || 0), 0);
-        return { ...cat, amt };
-      })
+      .map(cat => ({ ...cat, amt: categoryAmounts.get(cat.id) || 0 }))
       .filter(c => c.amt > 0)
       .sort((a, b) => b.amt - a.amt);
 
     const knownCategoryIds = new Set(categories.map(cat => cat.id));
     const uncategorizedAmount = monthlyExpenses
       .filter(expense => !knownCategoryIds.has(expense.categoryId))
-      .reduce((sum, expense) => sum + (expense.amount || 0), 0);
+      .reduce((sum, expense) => sum + (Number(expense.amount) || 0), 0);
 
     if (uncategorizedAmount > 0) {
       categoryData.push({
@@ -100,22 +103,17 @@ export const DashboardView = () => {
     }
 
     return categoryData;
-  }, [categories, monthlyExpenses]);
+  }, [categories, monthlyExpenses, categoryAmounts]);
 
   const categoryLegend = useMemo(() => {
     const legendData = categories
-      .map(cat => ({
-        ...cat,
-        amt: monthlyExpenses
-          .filter(e => e.categoryId === cat.id)
-          .reduce((s, e) => s + (e.amount || 0), 0)
-      }))
+      .map(cat => ({ ...cat, amt: categoryAmounts.get(cat.id) || 0 }))
       .sort((a, b) => b.amt - a.amt);
 
     const knownCategoryIds = new Set(categories.map(cat => cat.id));
     const uncategorizedAmount = monthlyExpenses
       .filter(expense => !knownCategoryIds.has(expense.categoryId))
-      .reduce((sum, expense) => sum + (expense.amount || 0), 0);
+      .reduce((sum, expense) => sum + (Number(expense.amount) || 0), 0);
 
     if (uncategorizedAmount > 0) {
       legendData.push({
@@ -129,7 +127,7 @@ export const DashboardView = () => {
     }
 
     return legendData;
-  }, [categories, monthlyExpenses]);
+  }, [categories, monthlyExpenses, categoryAmounts]);
 
   // Build pie slices — use grandTotal so savings slice is proportional
   const slices = useMemo(() => {

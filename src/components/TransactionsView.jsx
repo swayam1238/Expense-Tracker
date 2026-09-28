@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { PAYMENT_METHODS } from '../constants';
 import { 
@@ -30,35 +30,31 @@ export const TransactionsView = () => {
   const [selectedPayment, setSelectedPayment] = useState('all');
   const [sortBy, setSortBy] = useState('date-desc');
 
-  // Filter expenses
-  const filteredExpenses = expenses.filter(exp => {
-    // Month filter
-    const matchesMonth = exp.date && exp.date.startsWith(selectedMonth);
-    
-    // Search query
-    const matchesSearch = !search || 
-      (exp.title && exp.title.toLowerCase().includes(search.toLowerCase())) ||
-      (exp.notes && exp.notes.toLowerCase().includes(search.toLowerCase()));
+  const searchLower = search.toLowerCase();
+  const sortedExpenses = useMemo(() => {
+    const filtered = expenses.filter(exp => {
+      const matchesMonth = exp.date && exp.date.startsWith(selectedMonth);
+      const matchesSearch = !searchLower ||
+        (exp.title && exp.title.toLowerCase().includes(searchLower)) ||
+        (exp.notes && exp.notes.toLowerCase().includes(searchLower));
+      const matchesCat = selectedCat === 'all' || exp.categoryId === selectedCat;
+      const matchesPayment = selectedPayment === 'all' || exp.paymentMethod === selectedPayment;
+      return matchesMonth && matchesSearch && matchesCat && matchesPayment;
+    });
 
-    // Category filter
-    const matchesCat = selectedCat === 'all' || exp.categoryId === selectedCat;
+    return [...filtered].sort((a, b) => {
+      if (sortBy === 'date-desc') return new Date(b.date) - new Date(a.date);
+      if (sortBy === 'date-asc') return new Date(a.date) - new Date(b.date);
+      if (sortBy === 'amount-desc') return b.amount - a.amount;
+      if (sortBy === 'amount-asc') return a.amount - b.amount;
+      return 0;
+    });
+  }, [expenses, selectedMonth, searchLower, selectedCat, selectedPayment, sortBy]);
 
-    // Payment method filter
-    const matchesPayment = selectedPayment === 'all' || exp.paymentMethod === selectedPayment;
-
-    return matchesMonth && matchesSearch && matchesCat && matchesPayment;
-  });
-
-  // Sort
-  const sortedExpenses = [...filteredExpenses].sort((a, b) => {
-    if (sortBy === 'date-desc') return new Date(b.date) - new Date(a.date);
-    if (sortBy === 'date-asc') return new Date(a.date) - new Date(b.date);
-    if (sortBy === 'amount-desc') return b.amount - a.amount;
-    if (sortBy === 'amount-asc') return a.amount - b.amount;
-    return 0;
-  });
-
-  const totalFilteredAmount = sortedExpenses.reduce((acc, curr) => acc + (curr.amount || 0), 0);
+  const totalFilteredAmount = useMemo(
+    () => sortedExpenses.reduce((acc, curr) => acc + (curr.amount || 0), 0),
+    [sortedExpenses]
+  );
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '0 16px' }}>

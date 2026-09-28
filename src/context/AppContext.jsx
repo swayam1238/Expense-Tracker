@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { 
   DEFAULT_CATEGORIES,
   normalizePaymentMethod
@@ -7,9 +7,11 @@ import {
   isFirebaseConfigured, 
   listenToAuth, 
   subscribeUserExpenses, 
-  addExpenseToCloud, 
+  addExpenseToCloud,
+  addExpensesToCloudBatch,
   updateExpenseInCloud, 
   deleteExpenseFromCloud,
+  deleteAllUserExpensesFromCloud,
   subscribeUserSettings,
   saveUserSettingsToCloud,
   logoutUser,
@@ -29,29 +31,47 @@ const LOCAL_STORAGE_CATEGORY_MONTHS_KEY = 'spendflow_categories_by_month_v1';
 const LOCAL_STORAGE_BUDGET_KEY = 'spendflow_budget_v1';
 const LOCAL_STORAGE_CURRENCY_KEY = 'spendflow_currency_v1';
 const LOCAL_STORAGE_THEME_KEY = 'spendflow_theme_v1';
-const LEGACY_DEFAULT_CATEGORY_IDS = new Set([
-  'cat-food',
-  'cat-groceries',
-  'cat-transport',
-  'cat-shopping',
-  'cat-bills',
-  'cat-entertainment',
-  'cat-health',
-  'cat-work',
-  'cat-misc',
-  'cat-savings'
-]);
+const DEFAULT_CURRENCY = { symbol: '₹', code: 'INR', name: 'Indian Rupee' };
+const DEFAULT_BUDGET = 35000;
 
 const cloneCategoryList = (categoriesList = []) => categoriesList.map(cat => ({ ...cat }));
 
-const migrateSavedCategorySnapshots = (categoryMap) => Object.fromEntries(
-  Object.entries(categoryMap || {}).map(([monthKey, monthCategories]) => {
-    const hasOnlyLegacyDefaults = Array.isArray(monthCategories)
-      && monthCategories.length > 0
-      && monthCategories.every(category => LEGACY_DEFAULT_CATEGORY_IDS.has(category.id));
+const readStoredValue = (key) => {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+};
 
-    return [monthKey, hasOnlyLegacyDefaults ? cloneCategoryList(DEFAULT_CATEGORIES) : monthCategories];
-  })
+const readStoredJson = (key, fallback) => {
+  try {
+    const stored = readStoredValue(key);
+    return stored ? JSON.parse(stored) : fallback;
+  } catch {
+    return fallback;
+  }
+};
+
+const currentMonthKey = () => {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+};
+
+const migrateSavedCategorySnapshots = (categoryMap) => Object.fromEntries(
+  Object.entries(categoryMap || {}).map(([monthKey, monthCategories]) => [
+    monthKey,
+    Array.isArray(monthCategories)
+      ? monthCategories
+        .filter(category => category && typeof category.id === 'string' && typeof category.name === 'string')
+        .map(category => ({
+          ...category,
+          icon: typeof category.icon === 'string' ? category.icon : '📦',
+          color: typeof category.color === 'string' ? category.color : '#64748b',
+          budget: Number.isFinite(Number(category.budget)) ? Number(category.budget) : 0
+        }))
+      : cloneCategoryList(DEFAULT_CATEGORIES)
+  ])
 );
 
 const getLatestCategoriesSnapshot = (categoryMap, monthKey) => {
@@ -60,46 +80,43 @@ const getLatestCategoriesSnapshot = (categoryMap, monthKey) => {
   return fallbackKey ? cloneCategoryList(categoryMap[fallbackKey]) : cloneCategoryList(DEFAULT_CATEGORIES);
 };
 
+const serializeSettings = (categoriesByMonth, monthlyBudget, currency) => JSON.stringify({
+  categoriesByMonth,
+  monthlyBudget,
+  currency
+});
+
 export const AppProvider = ({ children }) => {
-  // Navigation & UI state
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isMagicNoteOpen, setIsMagicNoteOpen] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedMonth, setSelectedMonth] = useState(() => {
-    const now = new Date();
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-  });
+  const [selectedMonth, setSelectedMonth] = useState(currentMonthKey);
 
-  // Theme
   const [theme, setTheme] = useState(() => {
-    return localStorage.getItem(LOCAL_STORAGE_THEME_KEY) || 'light';
+    return readStoredValue(LOCAL_STORAGE_THEME_KEY) || 'light';
   });
 
-  // Auth & Cloud State
   const [user, setUser] = useState(null);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [authError, setAuthError] = useState('');
   const [cloudSynced, setCloudSynced] = useState(false);
+  const [expenseSyncError, setExpenseSyncError] = useState('');
   const [isSettingsLoaded, setIsSettingsLoaded] = useState(false);
+  const [settingsLoadError, setSettingsLoadError] = useState('');
+  const [settingsSyncError, setSettingsSyncError] = useState('');
+  const [settingsRetryVersion, setSettingsRetryVersion] = useState(0);
+  const currency = DEFAULT_CURRENCY;
 
-  // Currency
-  const [currency, setCurrency] = useState(() => {
-    const saved = localStorage.getItem(LOCAL_STORAGE_CURRENCY_KEY);
-    return saved ? JSON.parse(saved) : { symbol: '₹', code: 'INR', name: 'Indian Rupee' };
-  });
-
-  // Overall Monthly Budget
   const [monthlyBudget, setMonthlyBudget] = useState(() => {
-    const saved = localStorage.getItem(LOCAL_STORAGE_BUDGET_KEY);
-    return saved ? Number(saved) : 35000;
+    const saved = readStoredValue(LOCAL_STORAGE_BUDGET_KEY);
+    return saved ? Number(saved) : DEFAULT_BUDGET;
   });
 
-  // Categories, tracked per month so the category setup can continue forward while previous months remain visible in history.
   const [categoriesByMonth, setCategoriesByMonth] = useState(() => {
-    const saved = isFirebaseConfigured() ? null : localStorage.getItem(LOCAL_STORAGE_CATEGORY_MONTHS_KEY);
+    const saved = readStoredValue(LOCAL_STORAGE_CATEGORY_MONTHS_KEY);
     if (saved) {
       try {
         return migrateSavedCategorySnapshots(JSON.parse(saved));
@@ -108,33 +125,47 @@ export const AppProvider = ({ children }) => {
       }
     }
 
-    const initialMonth = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
-    return { [initialMonth]: cloneCategoryList(DEFAULT_CATEGORIES) };
+    return { [currentMonthKey()]: cloneCategoryList(DEFAULT_CATEGORIES) };
   });
 
-  const categories = categoriesByMonth[selectedMonth] || getLatestCategoriesSnapshot(categoriesByMonth, selectedMonth);
-
-  // Expenses
   const [expenses, setExpenses] = useState(() => {
-    const saved = isFirebaseConfigured() ? null : localStorage.getItem(LOCAL_STORAGE_EXPENSES_KEY);
-    const parsed = saved ? JSON.parse(saved) : [];
-    return Array.isArray(parsed) ? parsed.map(exp => ({
+    const parsed = readStoredJson(LOCAL_STORAGE_EXPENSES_KEY, []);
+    return Array.isArray(parsed) ? parsed.filter(exp => exp && typeof exp === 'object').map(exp => ({
       ...exp,
+      amount: Number(exp.amount) || 0,
       paymentMethod: normalizePaymentMethod(exp.paymentMethod)
     })) : [];
   });
 
-  // Apply theme to document
+  const lastPersistedSettingsRef = useRef('');
+  const selectedMonthRef = useRef(selectedMonth);
+  const categoriesByMonthRef = useRef(categoriesByMonth);
+  const monthlyBudgetRef = useRef(monthlyBudget);
+  selectedMonthRef.current = selectedMonth;
+  categoriesByMonthRef.current = categoriesByMonth;
+  monthlyBudgetRef.current = monthlyBudget;
+
+  const categories = categoriesByMonth[selectedMonth] || DEFAULT_CATEGORIES;
+
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
     localStorage.setItem(LOCAL_STORAGE_THEME_KEY, theme);
   }, [theme]);
 
-  const toggleTheme = () => {
+  const toggleTheme = useCallback(() => {
     setTheme(prev => (prev === 'dark' ? 'light' : 'dark'));
-  };
+  }, []);
 
-  // Auth Listener
+  const applyLocalGuestDefaults = useCallback(() => {
+    const initialMonth = currentMonthKey();
+    setCloudSynced(false);
+    setExpenseSyncError('');
+    setIsSettingsLoaded(false);
+    setExpenses([]);
+    setCategoriesByMonth({ [initialMonth]: cloneCategoryList(DEFAULT_CATEGORIES) });
+    setMonthlyBudget(DEFAULT_BUDGET);
+  }, []);
+
   useEffect(() => {
     const unsubscribe = listenToAuth((currentUser) => {
       if (currentUser && !isAllowedUser(currentUser)) {
@@ -152,47 +183,53 @@ export const AppProvider = ({ children }) => {
     return () => unsubscribe();
   }, []);
 
-  // Sync with Firestore when user is logged in (strictly isolated per user.uid)
   useEffect(() => {
-    const initialMonth = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
-
     if (!user) {
-      setCloudSynced(false);
-      setIsSettingsLoaded(false);
-      setExpenses([]);
-      setCategoriesByMonth({ [initialMonth]: cloneCategoryList(DEFAULT_CATEGORIES) });
-      setMonthlyBudget(35000);
-      setCurrency({ symbol: '₹', code: 'INR', name: 'Indian Rupee' });
+      applyLocalGuestDefaults();
       return;
     }
 
-    // Immediately clear any prior user's data while new user's cloud data loads
+    lastPersistedSettingsRef.current = '';
+    setSettingsLoadError('');
+    setSettingsSyncError('');
     setIsSettingsLoaded(false);
+    setCloudSynced(false);
+    setExpenseSyncError('');
     setExpenses([]);
-    setCategoriesByMonth({ [initialMonth]: cloneCategoryList(DEFAULT_CATEGORIES) });
 
-    // Subscribe to real-time expenses from Firestore for this specific user.uid
-    const unsubExpenses = subscribeUserExpenses(user.uid, (cloudExpenses) => {
-      setExpenses(cloudExpenses || []);
+    const unsubExpenses = subscribeUserExpenses(user.uid, (cloudExpenses, error) => {
+      setExpenseSyncError(error?.message || '');
+      setExpenses((cloudExpenses || []).map(exp => ({
+        ...exp,
+        amount: Number(exp.amount) || 0,
+        paymentMethod: normalizePaymentMethod(exp.paymentMethod)
+      })));
       setCloudSynced(true);
     });
 
-    // Fallback timer so offline/slow connections don't hang
-    const settingsTimeout = setTimeout(() => {
-      setIsSettingsLoaded(true);
-    }, 2000);
+    const unsubSettings = subscribeUserSettings(user.uid, (cloudSettings, error) => {
+      if (error) {
+        setSettingsLoadError(error.message || 'Could not load settings from Firestore.');
+        setIsSettingsLoaded(true);
+        return;
+      }
+      setSettingsLoadError('');
 
-    // Subscribe to user settings (budget, categories, currency) for this specific user.uid
-    const unsubSettings = subscribeUserSettings(user.uid, (cloudSettings) => {
-      clearTimeout(settingsTimeout);
+      const monthKey = selectedMonthRef.current;
+      let nextCategoriesByMonth = categoriesByMonthRef.current;
+      let nextBudget = monthlyBudgetRef.current;
+
       if (cloudSettings) {
         if (cloudSettings.categoriesByMonth && typeof cloudSettings.categoriesByMonth === 'object') {
-          setCategoriesByMonth(migrateSavedCategorySnapshots(cloudSettings.categoriesByMonth));
+          nextCategoriesByMonth = migrateSavedCategorySnapshots(cloudSettings.categoriesByMonth);
         } else if (cloudSettings.categories && Array.isArray(cloudSettings.categories)) {
-          setCategoriesByMonth(prev => ({ ...prev, [selectedMonth]: cloudSettings.categories }));
+          nextCategoriesByMonth = migrateSavedCategorySnapshots({
+            ...categoriesByMonthRef.current,
+            [monthKey]: cloudSettings.categories
+          });
         }
-        if (cloudSettings.monthlyBudget) setMonthlyBudget(Number(cloudSettings.monthlyBudget));
-        if (cloudSettings.currency) setCurrency(cloudSettings.currency);
+        if (cloudSettings.monthlyBudget != null) nextBudget = Number(cloudSettings.monthlyBudget);
+
         if (cloudSettings.lockMode) {
           localStorage.setItem(getLockModeKey(user.uid), cloudSettings.lockMode);
         }
@@ -202,22 +239,26 @@ export const AppProvider = ({ children }) => {
           localStorage.removeItem(getPasscodeHashKey(user.uid));
         }
       } else {
-        // Brand new user: initialize clean default settings
-        setCategoriesByMonth({ [initialMonth]: cloneCategoryList(DEFAULT_CATEGORIES) });
-        setMonthlyBudget(35000);
-        setCurrency({ symbol: '₹', code: 'INR', name: 'Indian Rupee' });
+        nextCategoriesByMonth = { [currentMonthKey()]: cloneCategoryList(DEFAULT_CATEGORIES) };
+        nextBudget = DEFAULT_BUDGET;
       }
+
+      const incoming = serializeSettings(nextCategoriesByMonth, nextBudget, currency);
+      if (incoming !== lastPersistedSettingsRef.current) {
+        lastPersistedSettingsRef.current = incoming;
+        setCategoriesByMonth(nextCategoriesByMonth);
+        setMonthlyBudget(nextBudget);
+      }
+
       setIsSettingsLoaded(true);
     });
 
     return () => {
-      clearTimeout(settingsTimeout);
       unsubExpenses();
       unsubSettings();
     };
-  }, [user?.uid, selectedMonth]);
+  }, [user?.uid, applyLocalGuestDefaults]);
 
-  // Save to local storage for offline / guest use
   useEffect(() => {
     if (!user && !isFirebaseConfigured()) {
       localStorage.setItem(LOCAL_STORAGE_EXPENSES_KEY, JSON.stringify(expenses));
@@ -228,8 +269,7 @@ export const AppProvider = ({ children }) => {
     const monthKey = selectedMonth;
     setCategoriesByMonth(prev => {
       if (prev[monthKey]) return prev;
-      const nextCategories = getLatestCategoriesSnapshot(prev, monthKey);
-      return { ...prev, [monthKey]: nextCategories };
+      return { ...prev, [monthKey]: getLatestCategoriesSnapshot(prev, monthKey) };
     });
   }, [selectedMonth]);
 
@@ -237,29 +277,42 @@ export const AppProvider = ({ children }) => {
     if (!user && !isFirebaseConfigured()) {
       localStorage.setItem(LOCAL_STORAGE_CATEGORIES_KEY, JSON.stringify(categories));
       localStorage.setItem(LOCAL_STORAGE_CATEGORY_MONTHS_KEY, JSON.stringify(categoriesByMonth));
-    } else if (user && isFirebaseConfigured() && isSettingsLoaded) {
-      saveUserSettingsToCloud(user.uid, { categories, categoriesByMonth }).catch(console.error);
-    }
-  }, [categories, categoriesByMonth, user, isSettingsLoaded]);
-
-  useEffect(() => {
-    if (!user && !isFirebaseConfigured()) {
       localStorage.setItem(LOCAL_STORAGE_BUDGET_KEY, monthlyBudget.toString());
-    } else if (user && isFirebaseConfigured() && isSettingsLoaded) {
-      saveUserSettingsToCloud(user.uid, { monthlyBudget }).catch(console.error);
-    }
-  }, [monthlyBudget, user, isSettingsLoaded]);
-
-  useEffect(() => {
-    if (!user && !isFirebaseConfigured()) {
       localStorage.setItem(LOCAL_STORAGE_CURRENCY_KEY, JSON.stringify(currency));
-    } else if (user && isFirebaseConfigured() && isSettingsLoaded) {
-      saveUserSettingsToCloud(user.uid, { currency }).catch(console.error);
+      return;
     }
-  }, [currency, user, isSettingsLoaded]);
 
-  // Add Expense
-  const addExpense = async (expenseData) => {
+    if (!user || !isFirebaseConfigured() || !isSettingsLoaded || settingsLoadError) return;
+
+    const serialized = serializeSettings(categoriesByMonth, monthlyBudget, currency);
+    if (serialized === lastPersistedSettingsRef.current) return;
+
+    let isActive = true;
+    const timeoutId = setTimeout(() => {
+      saveUserSettingsToCloud(user.uid, { categoriesByMonth, monthlyBudget, currency })
+        .then(() => {
+          if (!isActive) return;
+          lastPersistedSettingsRef.current = serialized;
+          setSettingsSyncError('');
+        })
+        .catch(error => {
+          if (!isActive) return;
+          console.error('Failed to save settings to Firestore:', error);
+          setSettingsSyncError(error.message || 'Could not save settings. Check your connection and retry.');
+        });
+    }, 400);
+
+    return () => {
+      isActive = false;
+      clearTimeout(timeoutId);
+    };
+  }, [categoriesByMonth, monthlyBudget, currency, user, isSettingsLoaded, settingsLoadError, settingsRetryVersion]);
+
+  const retrySettingsSync = useCallback(() => {
+    setSettingsRetryVersion(version => version + 1);
+  }, []);
+
+  const addExpense = useCallback(async (expenseData) => {
     const newExpense = {
       ...expenseData,
       paymentMethod: normalizePaymentMethod(expenseData.paymentMethod),
@@ -269,20 +322,15 @@ export const AppProvider = ({ children }) => {
     };
 
     if (user && isFirebaseConfigured()) {
-      try {
-        const cloudId = await addExpenseToCloud(user.uid, newExpense);
-        if (cloudId) newExpense.id = cloudId;
-      } catch (err) {
-        console.error('Failed to save to cloud, saving locally', err);
-      }
+      const cloudId = await addExpenseToCloud(user.uid, newExpense);
+      if (cloudId) newExpense.id = cloudId;
     }
 
-    setExpenses(prev => [newExpense, ...prev]);
+    setExpenses(prev => prev.some(exp => exp.id === newExpense.id) ? prev : [newExpense, ...prev]);
     return newExpense;
-  };
+  }, [user]);
 
-  // Batch Add (from Magic Notes Parser)
-  const batchAddExpenses = async (expensesList) => {
+  const batchAddExpenses = useCallback(async (expensesList) => {
     const prepared = expensesList.map(item => ({
       ...item,
       paymentMethod: normalizePaymentMethod(item.paymentMethod),
@@ -292,49 +340,46 @@ export const AppProvider = ({ children }) => {
     }));
 
     if (user && isFirebaseConfigured()) {
-      for (const item of prepared) {
-        try {
-          await addExpenseToCloud(user.uid, item);
-        } catch (err) {
-          console.error(err);
-        }
-      }
+      const cloudIds = await addExpensesToCloudBatch(user.uid, prepared);
+      cloudIds.forEach((id, index) => {
+        if (id) prepared[index].id = id;
+      });
     }
 
-    setExpenses(prev => [...prepared, ...prev]);
+    setExpenses(prev => {
+      const existingIds = new Set(prev.map(exp => exp.id));
+      return [...prepared.filter(item => !existingIds.has(item.id)), ...prev];
+    });
     return prepared.length;
-  };
+  }, [user]);
 
-  // Update Expense
-  const updateExpense = async (id, updatedData) => {
+  const updateExpense = useCallback(async (id, updatedData) => {
+    const nextData = {
+      ...updatedData,
+      ...(updatedData.paymentMethod != null
+        ? { paymentMethod: normalizePaymentMethod(updatedData.paymentMethod) }
+        : {})
+    };
+
     if (user && isFirebaseConfigured()) {
-      try {
-        await updateExpenseInCloud(user.uid, id, updatedData);
-      } catch (err) {
-        console.error(err);
-      }
+      await updateExpenseInCloud(user.uid, id, nextData);
     }
+
     setExpenses(prev => prev.map(exp => exp.id === id ? {
       ...exp,
-      ...updatedData,
-      paymentMethod: normalizePaymentMethod(updatedData.paymentMethod || exp.paymentMethod)
+      ...nextData,
+      paymentMethod: normalizePaymentMethod(nextData.paymentMethod || exp.paymentMethod)
     } : exp));
-  };
+  }, [user]);
 
-  // Delete Expense
-  const deleteExpense = async (id) => {
+  const deleteExpense = useCallback(async (id) => {
     if (user && isFirebaseConfigured()) {
-      try {
-        await deleteExpenseFromCloud(user.uid, id);
-      } catch (err) {
-        console.error(err);
-      }
+      await deleteExpenseFromCloud(user.uid, id);
     }
     setExpenses(prev => prev.filter(exp => exp.id !== id));
-  };
+  }, [user]);
 
-  // Category Management
-  const addCategory = (categoryData) => {
+  const addCategory = useCallback((categoryData) => {
     const newCategory = {
       ...categoryData,
       id: 'cat-' + Date.now(),
@@ -342,62 +387,66 @@ export const AppProvider = ({ children }) => {
     };
 
     setCategoriesByMonth(prev => {
-      const currentMonthCategories = prev[selectedMonth] || cloneCategoryList(categories);
+      const currentMonthCategories = prev[selectedMonth] || cloneCategoryList(DEFAULT_CATEGORIES);
       return {
         ...prev,
         [selectedMonth]: [...currentMonthCategories, newCategory]
       };
     });
-  };
+  }, [selectedMonth]);
 
-  const updateCategory = (id, updatedData) => {
+  const updateCategory = useCallback((id, updatedData) => {
     setCategoriesByMonth(prev => {
-      const currentMonthCategories = prev[selectedMonth] || cloneCategoryList(categories);
+      const currentMonthCategories = prev[selectedMonth] || cloneCategoryList(DEFAULT_CATEGORIES);
       return {
         ...prev,
         [selectedMonth]: currentMonthCategories.map(cat => cat.id === id ? { ...cat, ...updatedData } : cat)
       };
     });
-  };
+  }, [selectedMonth]);
 
-  const deleteCategory = (id) => {
-    const fallbackCatId = categories.find(c => c.id !== id)?.id || 'cat-misc';
-    setExpenses(prev => prev.map(exp => {
-      const isSameMonth = exp.date && exp.date.startsWith(selectedMonth);
-      return isSameMonth && exp.categoryId === id ? { ...exp, categoryId: fallbackCatId } : exp;
-    }));
+  const deleteCategory = useCallback((id) => {
+    const currentCategories = categoriesByMonth[selectedMonth] || DEFAULT_CATEGORIES;
+    const fallbackCatId = currentCategories.find(c => c.id !== id)?.id || 'cat-misc';
+
+    setExpenses(prev => {
+      const next = prev.map(exp => {
+        const isSameMonth = exp.date && exp.date.startsWith(selectedMonth);
+        return isSameMonth && exp.categoryId === id ? { ...exp, categoryId: fallbackCatId } : exp;
+      });
+
+      if (user && isFirebaseConfigured()) {
+        next.forEach((exp, index) => {
+          if (prev[index] && prev[index].categoryId !== exp.categoryId) {
+            updateExpenseInCloud(user.uid, exp.id, { categoryId: fallbackCatId }).catch(console.error);
+          }
+        });
+      }
+
+      return next;
+    });
 
     setCategoriesByMonth(prev => {
       const next = { ...prev };
 
       Object.keys(next).forEach(monthKey => {
         if (monthKey >= selectedMonth) {
-          next[monthKey] = next[monthKey].filter(cat => cat.id !== id);
+          next[monthKey] = (next[monthKey] || []).filter(cat => cat.id !== id);
         }
       });
 
-      const currentMonthCategories = next[selectedMonth] || cloneCategoryList(categories);
-      next[selectedMonth] = currentMonthCategories.filter(cat => cat.id !== id);
       return next;
     });
-  };
+  }, [categoriesByMonth, selectedMonth, user]);
 
-  // Sync local data to newly signed-in Firebase user
-  const syncLocalDataToCloud = async (signedInUser = user) => {
+  const syncLocalDataToCloud = useCallback(async (signedInUser = user) => {
     if (!signedInUser || !isFirebaseConfigured()) return;
     const localExpenses = JSON.parse(localStorage.getItem(LOCAL_STORAGE_EXPENSES_KEY) || '[]');
     const localCategoriesByMonth = JSON.parse(localStorage.getItem(LOCAL_STORAGE_CATEGORY_MONTHS_KEY) || 'null');
     if (localExpenses.length > 0) {
-      for (const exp of localExpenses) {
-        try {
-          await addExpenseToCloud(signedInUser.uid, exp);
-        } catch (e) {
-          console.error('Failed syncing local expense:', e);
-        }
-      }
+      await addExpensesToCloudBatch(signedInUser.uid, localExpenses);
     }
     await saveUserSettingsToCloud(signedInUser.uid, {
-      categories,
       categoriesByMonth: localCategoriesByMonth || categoriesByMonth,
       monthlyBudget,
       currency
@@ -408,10 +457,9 @@ export const AppProvider = ({ children }) => {
     localStorage.removeItem(LOCAL_STORAGE_BUDGET_KEY);
     localStorage.removeItem(LOCAL_STORAGE_CURRENCY_KEY);
     setCloudSynced(true);
-  };
+  }, [user, categoriesByMonth, monthlyBudget, currency]);
 
-  // Export Data to CSV
-  const exportToCSV = () => {
+  const exportToCSV = useCallback(() => {
     const headers = ['Date', 'Title', 'Amount', 'Currency', 'Category', 'Payment Method', 'Notes', 'Recurring'];
     const rows = expenses.map(exp => {
       const cat = categories.find(c => c.id === exp.categoryId)?.name || 'Other';
@@ -435,10 +483,9 @@ export const AppProvider = ({ children }) => {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-  };
+  }, [expenses, categories, currency]);
 
-  // Export Data to JSON
-  const exportToJSON = () => {
+  const exportToJSON = useCallback(() => {
     const backup = {
       version: '1.0',
       exportedAt: new Date().toISOString(),
@@ -455,101 +502,128 @@ export const AppProvider = ({ children }) => {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-  };
+  }, [currency, monthlyBudget, categories, categoriesByMonth, expenses]);
 
-  // Import JSON Backup
-  const importFromJSON = (jsonString) => {
+  const importFromJSON = useCallback(async (jsonString) => {
     try {
       const parsed = JSON.parse(jsonString);
-      if (parsed.expenses && Array.isArray(parsed.expenses)) {
-        setExpenses(parsed.expenses);
+      const nextExpenses = Array.isArray(parsed.expenses)
+        ? parsed.expenses
+          .filter(expense => expense && typeof expense === 'object')
+          .map(expense => ({
+            ...expense,
+            amount: Number(expense.amount) || 0,
+            paymentMethod: normalizePaymentMethod(expense.paymentMethod)
+          }))
+        : expenses;
+      const nextCategoriesByMonth = parsed.categoriesByMonth && typeof parsed.categoriesByMonth === 'object'
+        ? parsed.categoriesByMonth
+        : (parsed.categories && Array.isArray(parsed.categories)
+          ? { ...categoriesByMonth, [selectedMonth]: parsed.categories }
+          : categoriesByMonth);
+      const nextBudget = parsed.monthlyBudget != null ? Number(parsed.monthlyBudget) : monthlyBudget;
+      const nextCurrency = currency;
+
+      setExpenses(nextExpenses);
+      setCategoriesByMonth(nextCategoriesByMonth);
+      setMonthlyBudget(nextBudget);
+
+      if (user && isFirebaseConfigured()) {
+        if (Array.isArray(parsed.expenses)) {
+          await addExpensesToCloudBatch(user.uid, parsed.expenses);
+        }
+        await saveUserSettingsToCloud(user.uid, {
+          categoriesByMonth: nextCategoriesByMonth,
+          monthlyBudget: nextBudget,
+          currency: nextCurrency
+        });
       }
-      if (parsed.categoriesByMonth && typeof parsed.categoriesByMonth === 'object') {
-        setCategoriesByMonth(parsed.categoriesByMonth);
-      } else if (parsed.categories && Array.isArray(parsed.categories)) {
-        setCategoriesByMonth(prev => ({ ...prev, [selectedMonth]: parsed.categories }));
-      }
-      if (parsed.monthlyBudget) {
-        setMonthlyBudget(Number(parsed.monthlyBudget));
-      }
-      if (parsed.currency) {
-        setCurrency(parsed.currency);
-      }
+
       return { success: true, count: parsed.expenses?.length || 0 };
     } catch (err) {
       return { success: false, error: err.message };
     }
-  };
+  }, [expenses, categoriesByMonth, selectedMonth, monthlyBudget, currency, user]);
 
-  // Clean logout: resets all in-memory state so no user data ever bleeds over
-  const handleLogout = async () => {
+  const handleLogout = useCallback(async () => {
     try {
       if (user?.uid) {
         lockApp(user.uid);
       }
       await logoutUser();
       setUser(null);
-      setExpenses([]);
-      const initialMonth = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
-      setCategoriesByMonth({ [initialMonth]: cloneCategoryList(DEFAULT_CATEGORIES) });
-      setMonthlyBudget(35000);
-      setCurrency({ symbol: '₹', code: 'INR', name: 'Indian Rupee' });
-      setCloudSynced(false);
+      applyLocalGuestDefaults();
       localStorage.removeItem(LOCAL_STORAGE_EXPENSES_KEY);
       localStorage.removeItem(LOCAL_STORAGE_CATEGORIES_KEY);
       localStorage.removeItem(LOCAL_STORAGE_CATEGORY_MONTHS_KEY);
     } catch (err) {
       console.error('Logout error:', err);
     }
-  };
+  }, [user, applyLocalGuestDefaults]);
+
+  const clearAllData = useCallback(async () => {
+    if (user && isFirebaseConfigured()) {
+      await deleteAllUserExpensesFromCloud(user.uid);
+    }
+    setExpenses([]);
+  }, [user]);
+
+  const value = useMemo(() => ({
+    activeTab,
+    setActiveTab,
+    isAddModalOpen,
+    setIsAddModalOpen,
+    isMagicNoteOpen,
+    setIsMagicNoteOpen,
+    isAuthModalOpen,
+    setIsAuthModalOpen,
+    editingExpense,
+    setEditingExpense,
+    searchQuery,
+    setSearchQuery,
+    selectedMonth,
+    setSelectedMonth,
+    theme,
+    toggleTheme,
+    user,
+    authError,
+    isAuthLoading,
+    isSettingsLoaded,
+    cloudSynced,
+    expenseSyncError,
+    settingsLoadError,
+    settingsSyncError,
+    retrySettingsSync,
+    currency,
+    monthlyBudget,
+    setMonthlyBudget,
+    categories,
+    categoriesByMonth,
+    expenses,
+    addExpense,
+    batchAddExpenses,
+    updateExpense,
+    deleteExpense,
+    addCategory,
+    updateCategory,
+    deleteCategory,
+    syncLocalDataToCloud,
+    exportToCSV,
+    exportToJSON,
+    importFromJSON,
+    clearAllData,
+    logoutUser: handleLogout
+  }), [
+    activeTab, isAddModalOpen, isMagicNoteOpen, isAuthModalOpen, editingExpense,
+    searchQuery, selectedMonth, theme, toggleTheme, user, authError, isAuthLoading,
+    isSettingsLoaded, cloudSynced, expenseSyncError, settingsLoadError, settingsSyncError, retrySettingsSync, currency, monthlyBudget, categories, categoriesByMonth,
+    expenses, addExpense, batchAddExpenses, updateExpense, deleteExpense, addCategory,
+    updateCategory, deleteCategory, syncLocalDataToCloud, exportToCSV, exportToJSON,
+    importFromJSON, handleLogout, clearAllData
+  ]);
 
   return (
-    <AppContext.Provider value={{
-      // State
-      activeTab,
-      setActiveTab,
-      isAddModalOpen,
-      setIsAddModalOpen,
-      isMagicNoteOpen,
-      setIsMagicNoteOpen,
-      isAuthModalOpen,
-      setIsAuthModalOpen,
-      editingExpense,
-      setEditingExpense,
-      searchQuery,
-      setSearchQuery,
-      selectedMonth,
-      setSelectedMonth,
-      theme,
-      toggleTheme,
-      user,
-      authError,
-      isAuthLoading,
-      isSettingsLoaded,
-      cloudSynced,
-      currency,
-      setCurrency,
-      monthlyBudget,
-      setMonthlyBudget,
-      categories,
-      categoriesByMonth,
-      expenses,
-      
-      // Actions
-      addExpense,
-      batchAddExpenses,
-      updateExpense,
-      deleteExpense,
-      addCategory,
-      updateCategory,
-      deleteCategory,
-      syncLocalDataToCloud,
-      exportToCSV,
-      exportToJSON,
-      importFromJSON,
-      clearAllData: handleLogout,
-      logoutUser: handleLogout
-    }}>
+    <AppContext.Provider value={value}>
       {children}
     </AppContext.Provider>
   );

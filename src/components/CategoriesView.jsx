@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { POPULAR_EMOJIS, CATEGORY_COLORS } from '../constants';
 import { 
@@ -32,7 +32,14 @@ export const CategoriesView = () => {
   const [budget, setBudget] = useState('5000');
 
   // Filter current month expenses
-  const monthlyExpenses = expenses.filter(exp => exp.date && exp.date.startsWith(selectedMonth));
+  const categorySpending = useMemo(() => {
+    const spending = new Map();
+    for (const expense of expenses) {
+      if (!expense.date?.startsWith(selectedMonth)) continue;
+      spending.set(expense.categoryId, (spending.get(expense.categoryId) || 0) + (Number(expense.amount) || 0));
+    }
+    return spending;
+  }, [expenses, selectedMonth]);
 
   const handleOpenAdd = () => {
     setEditingCatId(null);
@@ -110,9 +117,7 @@ export const CategoriesView = () => {
         gap: '14px'
       }}>
         {categories.map((cat) => {
-          const spentThisMonth = monthlyExpenses
-            .filter(e => e.categoryId === cat.id)
-            .reduce((acc, curr) => acc + (curr.amount || 0), 0);
+          const spentThisMonth = categorySpending.get(cat.id) || 0;
 
           const percent = cat.budget > 0 ? Math.min(Math.round((spentThisMonth / cat.budget) * 100), 100) : 0;
           const isOver = cat.budget > 0 && spentThisMonth > cat.budget;

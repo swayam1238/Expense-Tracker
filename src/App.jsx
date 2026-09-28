@@ -1,13 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { Suspense, lazy, useEffect, useState } from 'react';
 import './index.css';
 import { AppProvider, useApp } from './context/AppContext';
 import { Header } from './components/Header';
 import { BottomNav } from './components/BottomNav';
-import { DashboardView } from './components/DashboardView';
-import { TransactionsView } from './components/TransactionsView';
-import { AnalyticsView } from './components/AnalyticsView';
-import { CategoriesView } from './components/CategoriesView';
-import { SettingsView } from './components/SettingsView';
 import { AddExpenseModal } from './components/AddExpenseModal';
 import { AuthModal } from './components/AuthModal';
 import { isFirebaseConfigured, saveUserSettingsToCloud } from './firebase';
@@ -21,6 +16,41 @@ import {
   canUseDeviceLock,
   authenticateWithDeviceLock,
 } from './utils/appLock';
+
+const DashboardView = lazy(() => import('./components/DashboardView').then(module => ({ default: module.DashboardView })));
+const TransactionsView = lazy(() => import('./components/TransactionsView').then(module => ({ default: module.TransactionsView })));
+const AnalyticsView = lazy(() => import('./components/AnalyticsView').then(module => ({ default: module.AnalyticsView })));
+const CategoriesView = lazy(() => import('./components/CategoriesView').then(module => ({ default: module.CategoriesView })));
+const SettingsView = lazy(() => import('./components/SettingsView').then(module => ({ default: module.SettingsView })));
+
+class AppErrorBoundary extends React.Component {
+  state = { hasError: false };
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error, errorInfo) {
+    console.error('Application render failed:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div role="alert" style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', padding: 24, background: 'var(--bg-base)', color: 'var(--text-primary)' }}>
+          <div style={{ maxWidth: 360, textAlign: 'center' }}>
+            <h1 style={{ fontSize: '1.25rem', marginBottom: 8 }}>The app could not load</h1>
+            <p style={{ color: 'var(--text-secondary)', marginBottom: 18 }}>Reload the app to try again. Your saved data has not been changed.</p>
+            <button type="button" className="btn btn-accent" onClick={() => window.location.reload()} style={{ padding: '11px 20px' }}>
+              Reload app
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 const AppLock = ({ onUnlock, userId }) => {
   const [isBusy, setIsBusy] = useState(false);
@@ -358,9 +388,13 @@ const AppLock = ({ onUnlock, userId }) => {
 const AppShell = () => {
   const {
     activeTab,
+    setActiveTab,
     user,
     isAuthLoading,
     isSettingsLoaded,
+    expenseSyncError,
+    settingsLoadError,
+    settingsSyncError,
   } = useApp();
 
   // Local lock state — initialized only once user and settings are ready
@@ -421,11 +455,21 @@ const AppShell = () => {
       <Header />
 
       <main style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', minWidth: 0 }}>
-        {activeTab === 'dashboard' && <DashboardView />}
-        {activeTab === 'transactions' && <TransactionsView />}
-        {activeTab === 'analytics' && <AnalyticsView />}
-        {activeTab === 'categories' && <CategoriesView />}
-        {activeTab === 'settings' && <SettingsView onLock={() => setIsUnlocked(false)} />}
+        {(expenseSyncError || settingsLoadError || settingsSyncError) && (
+          <div role="alert" style={{ margin: '12px 16px', padding: '10px 12px', borderRadius: 'var(--radius-md)', background: 'rgba(239, 68, 68, 0.1)', color: 'var(--danger)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, fontSize: '0.8rem' }}>
+            <span>Cloud sync needs attention. Your latest changes may not be saved.</span>
+            <button type="button" onClick={() => setActiveTab('settings')} className="btn btn-secondary" style={{ flexShrink: 0 }}>
+              Details
+            </button>
+          </div>
+        )}
+        <Suspense fallback={<div style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)' }}>Loading view…</div>}>
+          {activeTab === 'dashboard' && <DashboardView />}
+          {activeTab === 'transactions' && <TransactionsView />}
+          {activeTab === 'analytics' && <AnalyticsView />}
+          {activeTab === 'categories' && <CategoriesView />}
+          {activeTab === 'settings' && <SettingsView onLock={() => setIsUnlocked(false)} />}
+        </Suspense>
       </main>
 
       <BottomNav />
@@ -437,8 +481,10 @@ const AppShell = () => {
 
 export default function App() {
   return (
-    <AppProvider>
-      <AppShell />
-    </AppProvider>
+    <AppErrorBoundary>
+      <AppProvider>
+        <AppShell />
+      </AppProvider>
+    </AppErrorBoundary>
   );
 }

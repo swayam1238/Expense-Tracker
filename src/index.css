@@ -1,7 +1,7 @@
 /* =============================================
   Expense Tracker — Mobile-First iOS-style Design
    ============================================= */
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap');
 
 :root {
   /* Light Theme (Default) */
@@ -256,8 +256,6 @@ body {
   padding: 20px;
   overflow-y: auto;
   background: var(--bg-overlay);
-  backdrop-filter: blur(5px);
-  -webkit-backdrop-filter: blur(5px);
   animation: fadeIn 0.2s ease;
 }
 
@@ -347,8 +345,6 @@ body {
   inset: 0;
   background: var(--bg-overlay);
   z-index: 800;
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
   animation: fadeIn 0.2s ease;
 }
 
@@ -364,7 +360,7 @@ body {
   box-shadow: var(--shadow-sheet);
   z-index: 900;
   overflow: hidden;
-  animation: slideUp 0.32s cubic-bezier(0.16, 1, 0.3, 1);
+  animation: slideUp 0.22s ease-out;
   padding-bottom: calc(24px + var(--safe-bottom));
   max-height: 92dvh;
   overflow-y: auto;

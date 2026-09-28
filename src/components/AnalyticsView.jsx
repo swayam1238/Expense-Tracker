@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { PAYMENT_METHODS } from '../constants';
 import { 
@@ -6,89 +6,119 @@ import {
 } from 'lucide-react';
 
 export const AnalyticsView = () => {
-  const { expenses, categories, currency, selectedMonth, monthlyBudget } = useApp();
+  const { expenses, categories, currency, selectedMonth } = useApp();
   const [activeCategoryHover, setActiveCategoryHover] = useState(null);
 
-  // Filter current month expenses
-  const monthlyExpenses = expenses.filter(exp => exp.date && exp.date.startsWith(selectedMonth));
-  const spendingExpenses = monthlyExpenses.filter(exp => exp.categoryId !== 'cat-savings');
-  const totalSpent = spendingExpenses.reduce((acc, curr) => acc + (curr.amount || 0), 0);
-  const totalSaved = monthlyExpenses
-    .filter(exp => exp.categoryId === 'cat-savings')
-    .reduce((acc, curr) => acc + (curr.amount || 0), 0);
+  const monthlyExpenses = useMemo(
+    () => expenses.filter(exp => exp.date && exp.date.startsWith(selectedMonth)),
+    [expenses, selectedMonth]
+  );
+  const spendingExpenses = useMemo(
+    () => monthlyExpenses.filter(exp => exp.categoryId !== 'cat-savings'),
+    [monthlyExpenses]
+  );
+  const totalSpent = useMemo(
+    () => spendingExpenses.reduce((acc, curr) => acc + (curr.amount || 0), 0),
+    [spendingExpenses]
+  );
+  const totalSaved = useMemo(
+    () => monthlyExpenses
+      .filter(exp => exp.categoryId === 'cat-savings')
+      .reduce((acc, curr) => acc + (curr.amount || 0), 0),
+    [monthlyExpenses]
+  );
   const chartTotal = totalSpent + totalSaved;
 
-  // Group by Category, including savings and expenses with retired category IDs.
-  const categoryStats = categories.map(cat => {
-    const matchingExpenses = monthlyExpenses.filter(exp => exp.categoryId === cat.id);
-    const total = matchingExpenses.reduce((acc, curr) => acc + (curr.amount || 0), 0);
-    const percentage = chartTotal > 0 ? (total / chartTotal) * 100 : 0;
-    return {
-      ...cat,
-      total,
-      count: matchingExpenses.length,
-      percentage
-    };
-  }).filter(c => c.total > 0).sort((a, b) => b.total - a.total);
+  const categoryTotals = useMemo(() => {
+    const totals = new Map();
+    const counts = new Map();
+    for (const expense of monthlyExpenses) {
+      const categoryId = expense.categoryId;
+      totals.set(categoryId, (totals.get(categoryId) || 0) + (Number(expense.amount) || 0));
+      counts.set(categoryId, (counts.get(categoryId) || 0) + 1);
+    }
+    return { totals, counts };
+  }, [monthlyExpenses]);
 
-  const knownCategoryIds = new Set(categories.map(cat => cat.id));
-  const uncategorizedExpenses = monthlyExpenses.filter(exp => !knownCategoryIds.has(exp.categoryId));
-  const uncategorizedTotal = uncategorizedExpenses.reduce((sum, exp) => sum + (exp.amount || 0), 0);
-  if (uncategorizedTotal > 0) {
-    categoryStats.push({
-      id: 'cat-uncategorized',
-      name: 'Uncategorized',
-      icon: '📌',
-      color: '#94a3b8',
-      total: uncategorizedTotal,
-      count: uncategorizedExpenses.length,
-      percentage: chartTotal > 0 ? (uncategorizedTotal / chartTotal) * 100 : 0
-    });
-    categoryStats.sort((a, b) => b.total - a.total);
-  }
+  const categoryStats = useMemo(() => {
+    const stats = categories.map(cat => {
+      const total = categoryTotals.totals.get(cat.id) || 0;
+      return {
+        ...cat,
+        total,
+        count: categoryTotals.counts.get(cat.id) || 0,
+        percentage: chartTotal > 0 ? (total / chartTotal) * 100 : 0
+      };
+    }).filter(category => category.total > 0);
 
-  // Group by Payment Method
-  const paymentStats = PAYMENT_METHODS.map(pm => {
-    const total = spendingExpenses
-      .filter(exp => exp.paymentMethod === pm.id)
-      .reduce((acc, curr) => acc + (curr.amount || 0), 0);
-    const count = spendingExpenses.filter(exp => exp.paymentMethod === pm.id).length;
-    const percentage = totalSpent > 0 ? (total / totalSpent) * 100 : 0;
+    const knownCategoryIds = new Set(categories.map(cat => cat.id));
+    const uncategorizedExpenses = monthlyExpenses.filter(exp => !knownCategoryIds.has(exp.categoryId));
+    const uncategorizedTotal = uncategorizedExpenses.reduce((sum, exp) => sum + (Number(exp.amount) || 0), 0);
+    if (uncategorizedTotal > 0) {
+      stats.push({
+        id: 'cat-uncategorized',
+        name: 'Uncategorized',
+        icon: '📌',
+        color: '#94a3b8',
+        total: uncategorizedTotal,
+        count: uncategorizedExpenses.length,
+        percentage: chartTotal > 0 ? (uncategorizedTotal / chartTotal) * 100 : 0
+      });
+    }
+
+    return stats.sort((a, b) => b.total - a.total);
+  }, [categories, monthlyExpenses, chartTotal, categoryTotals]);
+
+  const paymentStats = useMemo(() => PAYMENT_METHODS.map(pm => {
+    const matching = spendingExpenses.filter(exp => exp.paymentMethod === pm.id);
+    const total = matching.reduce((acc, curr) => acc + (curr.amount || 0), 0);
     return {
       ...pm,
       total,
-      count,
-      percentage
+      count: matching.length,
+      percentage: totalSpent > 0 ? (total / totalSpent) * 100 : 0
     };
-  }).sort((a, b) => b.total - a.total);
+  }).sort((a, b) => b.total - a.total), [spendingExpenses, totalSpent]);
 
-  // Group by Day (for trend chart)
   const daysInCurrentMonth = 31;
-  const dailySpendMap = {};
-  for (let i = 1; i <= daysInCurrentMonth; i++) {
-    const dayStr = String(i).padStart(2, '0');
-    dailySpendMap[dayStr] = 0;
-  }
-  monthlyExpenses.forEach(exp => {
-    if (exp.date) {
-      const day = exp.date.split('-')[2];
-      if (day && dailySpendMap[day] !== undefined) {
-        dailySpendMap[day] += exp.amount || 0;
-      }
+  const dailySpendList = useMemo(() => {
+    const dailySpendMap = {};
+    for (let i = 1; i <= daysInCurrentMonth; i++) {
+      dailySpendMap[String(i).padStart(2, '0')] = 0;
     }
-  });
+    monthlyExpenses.forEach(exp => {
+      if (exp.date) {
+        const day = exp.date.split('-')[2];
+        if (day && dailySpendMap[day] !== undefined) {
+          dailySpendMap[day] += exp.amount || 0;
+        }
+      }
+    });
+    return Object.entries(dailySpendMap).map(([day, amount]) => ({
+      day: parseInt(day, 10),
+      amount
+    }));
+  }, [monthlyExpenses]);
 
-  const dailySpendList = Object.entries(dailySpendMap).map(([day, amount]) => ({
-    day: parseInt(day, 10),
-    amount
-  }));
+  const maxDailySpend = useMemo(
+    () => Math.max(...dailySpendList.map(d => d.amount), 1),
+    [dailySpendList]
+  );
 
-  const maxDailySpend = Math.max(...dailySpendList.map(d => d.amount), 1);
-
-  // SVG Donut Chart Calculation
   const radius = 70;
   const circumference = 2 * Math.PI * radius;
-  let accumulatedAngle = 0;
+  const donutSlices = useMemo(() => {
+    let accumulatedAngle = 0;
+    return categoryStats.map(cat => {
+      const slice = {
+        ...cat,
+        strokeDasharray: `${(cat.percentage / 100) * circumference} ${circumference}`,
+        strokeDashoffset: -accumulatedAngle
+      };
+      accumulatedAngle += (cat.percentage / 100) * circumference;
+      return slice;
+    });
+  }, [categoryStats, circumference]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', padding: '0 16px' }}>
@@ -127,12 +157,7 @@ export const AnalyticsView = () => {
                   stroke="var(--bg-primary)"
                   strokeWidth="24"
                 />
-                {categoryStats.map((cat, idx) => {
-                  const strokeDasharray = `${(cat.percentage / 100) * circumference} ${circumference}`;
-                  const strokeDashoffset = -accumulatedAngle;
-                  accumulatedAngle += (cat.percentage / 100) * circumference;
-
-                  return (
+                {donutSlices.map((cat) => (
                     <circle
                       key={cat.id}
                       cx="100"
@@ -141,8 +166,8 @@ export const AnalyticsView = () => {
                       fill="none"
                       stroke={cat.color}
                       strokeWidth="24"
-                      strokeDasharray={strokeDasharray}
-                      strokeDashoffset={strokeDashoffset}
+                      strokeDasharray={cat.strokeDasharray}
+                      strokeDashoffset={cat.strokeDashoffset}
                       style={{
                         transition: 'stroke-width 0.2s ease, opacity 0.2s ease',
                         cursor: 'pointer',
@@ -151,8 +176,7 @@ export const AnalyticsView = () => {
                       onMouseEnter={() => setActiveCategoryHover(cat)}
                       onMouseLeave={() => setActiveCategoryHover(null)}
                     />
-                  );
-                })}
+                ))}
               </svg>
 
               {/* Center Info in Donut */}

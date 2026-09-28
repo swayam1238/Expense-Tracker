@@ -3,6 +3,11 @@ import { useApp } from '../context/AppContext';
 import { PAYMENT_METHODS } from '../constants';
 import { X, ChevronDown, Repeat, Check, Trash2, Calendar, Tag } from 'lucide-react';
 
+const getLocalDateString = () => {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+};
+
 export const AddExpenseModal = () => {
   const {
     isAddModalOpen, setIsAddModalOpen,
@@ -12,7 +17,7 @@ export const AddExpenseModal = () => {
     setActiveTab,
   } = useApp();
 
-  const today = new Date().toISOString().split('T')[0];
+  const today = getLocalDateString();
 
   const [title, setTitle] = useState('');
   const [amount, setAmount] = useState('');
@@ -21,11 +26,12 @@ export const AddExpenseModal = () => {
   const [date, setDate] = useState(today);
   const [isRecurring, setIsRecurring] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
-  // Reset form when modal opens/closes
   useEffect(() => {
     if (!isAddModalOpen) return;
 
+    const todayStr = getLocalDateString();
     const fallbackCategoryId = categories[0]?.id || '';
 
     if (editingExpense) {
@@ -37,20 +43,27 @@ export const AddExpenseModal = () => {
       setAmount(editingExpense.amount?.toString() || '');
       setCategoryId(validCategoryId);
       setPaymentMethod(editingExpense.paymentMethod || 'upi');
-      setDate(editingExpense.date || today);
+      setDate(editingExpense.date || todayStr);
       setIsRecurring(!!editingExpense.isRecurring);
-    } else {
-      const validCategoryId = categories.some(cat => cat.id === categoryId) ? categoryId : fallbackCategoryId;
-
-      setTitle('');
-      setAmount('');
-      setCategoryId(validCategoryId);
-      setPaymentMethod('upi');
-      setDate(today);
-      setIsRecurring(false);
-      setShowDatePicker(false);
+      return;
     }
-  }, [isAddModalOpen, editingExpense, categories, categoryId, today]);
+
+    setTitle('');
+    setAmount('');
+    setCategoryId(fallbackCategoryId);
+    setPaymentMethod('upi');
+    setDate(todayStr);
+    setIsRecurring(false);
+    setShowDatePicker(false);
+    setIsSaving(false);
+  }, [isAddModalOpen, editingExpense]);
+
+  useEffect(() => {
+    if (!isAddModalOpen || editingExpense || !categories.length) return;
+    if (!categories.some(cat => cat.id === categoryId)) {
+      setCategoryId(categories[0].id);
+    }
+  }, [isAddModalOpen, editingExpense, categories, categoryId]);
 
   if (!isAddModalOpen) return null;
 
@@ -59,9 +72,9 @@ export const AddExpenseModal = () => {
     setEditingExpense(null);
   };
 
-  const handleSubmit = () => {
-    const amt = parseFloat(amount);
-    if (!amt || amt <= 0) return;
+  const handleSubmit = async () => {
+    const amt = Number(amount);
+    if (!Number.isFinite(amt) || amt <= 0 || isSaving) return;
 
     const data = {
       title: title.trim() || (categories.find(c => c.id === categoryId)?.name || 'Expense'),
@@ -72,12 +85,19 @@ export const AddExpenseModal = () => {
       isRecurring,
     };
 
-    if (editingExpense) {
-      updateExpense(editingExpense.id, data);
-    } else {
-      addExpense(data);
+    setIsSaving(true);
+    try {
+      if (editingExpense) {
+        await updateExpense(editingExpense.id, data);
+      } else {
+        await addExpense(data);
+      }
+      handleClose();
+    } catch (err) {
+      console.error('Failed to save expense:', err);
+      window.alert('Could not save this expense. Check your connection and try again.');
+      setIsSaving(false);
     }
-    handleClose();
   };
 
   const handleDelete = () => {
@@ -131,11 +151,15 @@ export const AddExpenseModal = () => {
                 {currency.symbol}
               </span>
               <input
-                type="number"
+                type="text"
                 inputMode="decimal"
+                aria-label="Expense amount in Indian rupees"
                 placeholder="0"
                 value={amount}
-                onChange={e => setAmount(e.target.value)}
+                onChange={e => {
+                  const next = e.target.value.replace(/[^\d.,]/g, '').replace(',', '.');
+                  if (/^\d*\.?\d{0,2}$/.test(next)) setAmount(next);
+                }}
                 autoFocus
                 className="mono"
                 style={{
@@ -145,7 +169,8 @@ export const AddExpenseModal = () => {
                   fontSize: '2.8rem',
                   fontWeight: 900,
                   color: 'var(--text-primary)',
-                  width: '180px',
+                  width: 'min(180px, 65vw)',
+                  minWidth: 0,
                   textAlign: 'center',
                   letterSpacing: '-1px',
                 }}
@@ -392,7 +417,7 @@ export const AddExpenseModal = () => {
             <button
               type="button"
               onClick={handleSubmit}
-              disabled={!amount || parseFloat(amount) <= 0}
+              disabled={isSaving || !Number.isFinite(Number(amount)) || Number(amount) <= 0}
               className="btn btn-accent"
               style={{
                 flex: 1,
@@ -400,12 +425,12 @@ export const AddExpenseModal = () => {
                 fontSize: '1rem',
                 fontWeight: 700,
                 borderRadius: 'var(--radius-md)',
-                opacity: (!amount || parseFloat(amount) <= 0) ? 0.45 : 1,
-                pointerEvents: (!amount || parseFloat(amount) <= 0) ? 'none' : 'auto',
+                opacity: (isSaving || !Number.isFinite(Number(amount)) || Number(amount) <= 0) ? 0.45 : 1,
+                pointerEvents: (isSaving || !Number.isFinite(Number(amount)) || Number(amount) <= 0) ? 'none' : 'auto',
               }}
             >
               <Check size={18} />
-              {editingExpense ? 'Save Changes' : 'Add Expense'}
+              {isSaving ? 'Saving…' : (editingExpense ? 'Save Changes' : 'Add Expense')}
             </button>
           </div>
         </div>
