@@ -28,12 +28,11 @@ const AppContext = createContext();
 const LOCAL_STORAGE_EXPENSES_KEY = 'spendflow_expenses_v1';
 const LOCAL_STORAGE_CATEGORIES_KEY = 'spendflow_categories_v1';
 const LOCAL_STORAGE_CATEGORY_MONTHS_KEY = 'spendflow_categories_by_month_v1';
-const LOCAL_STORAGE_BUDGET_KEY = 'spendflow_budget_v1';
+const LEGACY_LOCAL_STORAGE_BUDGET_KEY = 'spendflow_budget_v1';
 const LOCAL_STORAGE_CURRENCY_KEY = 'spendflow_currency_v1';
 const LOCAL_STORAGE_THEME_KEY = 'spendflow_theme_v1';
 const LOCAL_STORAGE_EXPENSE_CHART_TYPE_KEY = 'spendflow_expense_chart_type_v1';
 const DEFAULT_CURRENCY = { symbol: '₹', code: 'INR', name: 'Indian Rupee' };
-const DEFAULT_BUDGET = 35000;
 const CHART_TYPES = new Set(['pie', 'bar', 'line']);
 
 const cloneCategoryList = (categoriesList = []) => categoriesList.map(cat => ({ ...cat }));
@@ -82,9 +81,8 @@ const getLatestCategoriesSnapshot = (categoryMap, monthKey) => {
   return fallbackKey ? cloneCategoryList(categoryMap[fallbackKey]) : cloneCategoryList(DEFAULT_CATEGORIES);
 };
 
-const serializeSettings = (categoriesByMonth, monthlyBudget, currency, expenseChartType) => JSON.stringify({
+const serializeSettings = (categoriesByMonth, currency, expenseChartType) => JSON.stringify({
   categoriesByMonth,
-  monthlyBudget,
   currency,
   expenseChartType
 });
@@ -123,11 +121,6 @@ export const AppProvider = ({ children }) => {
     setExpenseChartTypeState(nextChartType);
   }, []);
 
-  const [monthlyBudget, setMonthlyBudget] = useState(() => {
-    const saved = readStoredValue(LOCAL_STORAGE_BUDGET_KEY);
-    return saved ? Number(saved) : DEFAULT_BUDGET;
-  });
-
   const [categoriesByMonth, setCategoriesByMonth] = useState(() => {
     const saved = readStoredValue(LOCAL_STORAGE_CATEGORY_MONTHS_KEY);
     if (saved) {
@@ -153,10 +146,8 @@ export const AppProvider = ({ children }) => {
   const lastPersistedSettingsRef = useRef('');
   const selectedMonthRef = useRef(selectedMonth);
   const categoriesByMonthRef = useRef(categoriesByMonth);
-  const monthlyBudgetRef = useRef(monthlyBudget);
   selectedMonthRef.current = selectedMonth;
   categoriesByMonthRef.current = categoriesByMonth;
-  monthlyBudgetRef.current = monthlyBudget;
 
   const categories = categoriesByMonth[selectedMonth] || DEFAULT_CATEGORIES;
 
@@ -176,7 +167,10 @@ export const AppProvider = ({ children }) => {
     setIsSettingsLoaded(false);
     setExpenses([]);
     setCategoriesByMonth({ [initialMonth]: cloneCategoryList(DEFAULT_CATEGORIES) });
-    setMonthlyBudget(DEFAULT_BUDGET);
+  }, []);
+
+  useEffect(() => {
+    localStorage.removeItem(LEGACY_LOCAL_STORAGE_BUDGET_KEY);
   }, []);
 
   useEffect(() => {
@@ -239,7 +233,6 @@ export const AppProvider = ({ children }) => {
 
       const monthKey = selectedMonthRef.current;
       let nextCategoriesByMonth = categoriesByMonthRef.current;
-      let nextBudget = monthlyBudgetRef.current;
       let nextExpenseChartType = 'pie';
 
       if (cloudSettings) {
@@ -251,7 +244,6 @@ export const AppProvider = ({ children }) => {
             [monthKey]: cloudSettings.categories
           });
         }
-        if (cloudSettings.monthlyBudget != null) nextBudget = Number(cloudSettings.monthlyBudget);
         if (CHART_TYPES.has(cloudSettings.expenseChartType)) {
           nextExpenseChartType = cloudSettings.expenseChartType;
         }
@@ -266,14 +258,12 @@ export const AppProvider = ({ children }) => {
         }
       } else {
         nextCategoriesByMonth = { [currentMonthKey()]: cloneCategoryList(DEFAULT_CATEGORIES) };
-        nextBudget = DEFAULT_BUDGET;
       }
 
-      const incoming = serializeSettings(nextCategoriesByMonth, nextBudget, currency, nextExpenseChartType);
+      const incoming = serializeSettings(nextCategoriesByMonth, currency, nextExpenseChartType);
       if (incoming !== lastPersistedSettingsRef.current) {
         lastPersistedSettingsRef.current = incoming;
         setCategoriesByMonth(nextCategoriesByMonth);
-        setMonthlyBudget(nextBudget);
         setExpenseChartTypeState(nextExpenseChartType);
       }
 
@@ -304,7 +294,7 @@ export const AppProvider = ({ children }) => {
     if (!user && !isFirebaseConfigured()) {
       localStorage.setItem(LOCAL_STORAGE_CATEGORIES_KEY, JSON.stringify(categories));
       localStorage.setItem(LOCAL_STORAGE_CATEGORY_MONTHS_KEY, JSON.stringify(categoriesByMonth));
-      localStorage.setItem(LOCAL_STORAGE_BUDGET_KEY, monthlyBudget.toString());
+      localStorage.removeItem(LEGACY_LOCAL_STORAGE_BUDGET_KEY);
       localStorage.setItem(LOCAL_STORAGE_CURRENCY_KEY, JSON.stringify(currency));
       localStorage.setItem(LOCAL_STORAGE_EXPENSE_CHART_TYPE_KEY, expenseChartType);
       return;
@@ -312,12 +302,12 @@ export const AppProvider = ({ children }) => {
 
     if (!user || !isFirebaseConfigured() || !isSettingsLoaded || settingsLoadError) return;
 
-    const serialized = serializeSettings(categoriesByMonth, monthlyBudget, currency, expenseChartType);
+    const serialized = serializeSettings(categoriesByMonth, currency, expenseChartType);
     if (serialized === lastPersistedSettingsRef.current) return;
 
     let isActive = true;
     const timeoutId = setTimeout(() => {
-      saveUserSettingsToCloud(user.uid, { categoriesByMonth, monthlyBudget, currency, expenseChartType })
+      saveUserSettingsToCloud(user.uid, { categoriesByMonth, currency, expenseChartType })
         .then(() => {
           if (!isActive) return;
           if (pendingExpenseChartTypeRef.current === expenseChartType) {
@@ -337,7 +327,7 @@ export const AppProvider = ({ children }) => {
       isActive = false;
       clearTimeout(timeoutId);
     };
-  }, [categoriesByMonth, monthlyBudget, currency, expenseChartType, user, isSettingsLoaded, settingsLoadError, settingsRetryVersion]);
+  }, [categoriesByMonth, currency, expenseChartType, user, isSettingsLoaded, settingsLoadError, settingsRetryVersion]);
 
   const retrySettingsSync = useCallback(() => {
     setSettingsRetryVersion(version => version + 1);
@@ -479,17 +469,16 @@ export const AppProvider = ({ children }) => {
     }
     await saveUserSettingsToCloud(signedInUser.uid, {
       categoriesByMonth: localCategoriesByMonth || categoriesByMonth,
-      monthlyBudget,
       currency,
       expenseChartType
     });
     localStorage.removeItem(LOCAL_STORAGE_EXPENSES_KEY);
     localStorage.removeItem(LOCAL_STORAGE_CATEGORIES_KEY);
     localStorage.removeItem(LOCAL_STORAGE_CATEGORY_MONTHS_KEY);
-    localStorage.removeItem(LOCAL_STORAGE_BUDGET_KEY);
+    localStorage.removeItem(LEGACY_LOCAL_STORAGE_BUDGET_KEY);
     localStorage.removeItem(LOCAL_STORAGE_CURRENCY_KEY);
     setCloudSynced(true);
-  }, [user, categoriesByMonth, monthlyBudget, currency, expenseChartType]);
+  }, [user, categoriesByMonth, currency, expenseChartType]);
 
   const exportToCSV = useCallback(() => {
     const headers = ['Date', 'Title', 'Amount', 'Currency', 'Category', 'Payment Method', 'Notes', 'Recurring'];
@@ -522,7 +511,6 @@ export const AppProvider = ({ children }) => {
       version: '1.0',
       exportedAt: new Date().toISOString(),
       currency,
-      monthlyBudget,
       categories,
       categoriesByMonth,
       expenses
@@ -534,7 +522,7 @@ export const AppProvider = ({ children }) => {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-  }, [currency, monthlyBudget, categories, categoriesByMonth, expenses]);
+  }, [currency, categories, categoriesByMonth, expenses]);
 
   const importFromJSON = useCallback(async (jsonString) => {
     try {
@@ -553,12 +541,10 @@ export const AppProvider = ({ children }) => {
         : (parsed.categories && Array.isArray(parsed.categories)
           ? { ...categoriesByMonth, [selectedMonth]: parsed.categories }
           : categoriesByMonth);
-      const nextBudget = parsed.monthlyBudget != null ? Number(parsed.monthlyBudget) : monthlyBudget;
       const nextCurrency = currency;
 
       setExpenses(nextExpenses);
       setCategoriesByMonth(nextCategoriesByMonth);
-      setMonthlyBudget(nextBudget);
 
       if (user && isFirebaseConfigured()) {
         if (Array.isArray(parsed.expenses)) {
@@ -566,7 +552,6 @@ export const AppProvider = ({ children }) => {
         }
         await saveUserSettingsToCloud(user.uid, {
           categoriesByMonth: nextCategoriesByMonth,
-          monthlyBudget: nextBudget,
           currency: nextCurrency,
           expenseChartType
         });
@@ -576,7 +561,7 @@ export const AppProvider = ({ children }) => {
     } catch (err) {
       return { success: false, error: err.message };
     }
-  }, [expenses, categoriesByMonth, selectedMonth, monthlyBudget, currency, expenseChartType, user]);
+  }, [expenses, categoriesByMonth, selectedMonth, currency, expenseChartType, user]);
 
   const handleLogout = useCallback(async () => {
     try {
@@ -630,8 +615,6 @@ export const AppProvider = ({ children }) => {
     currency,
     expenseChartType,
     setExpenseChartType,
-    monthlyBudget,
-    setMonthlyBudget,
     categories,
     categoriesByMonth,
     expenses,
@@ -651,7 +634,7 @@ export const AppProvider = ({ children }) => {
   }), [
     activeTab, isAddModalOpen, isMagicNoteOpen, isAuthModalOpen, editingExpense,
     searchQuery, selectedMonth, theme, toggleTheme, user, authError, isAuthLoading,
-    isSettingsLoaded, cloudSynced, expenseSyncError, settingsLoadError, settingsSyncError, retrySettingsSync, currency, expenseChartType, setExpenseChartType, monthlyBudget, categories, categoriesByMonth,
+    isSettingsLoaded, cloudSynced, expenseSyncError, settingsLoadError, settingsSyncError, retrySettingsSync, currency, expenseChartType, setExpenseChartType, categories, categoriesByMonth,
     expenses, addExpense, batchAddExpenses, updateExpense, deleteExpense, addCategory,
     updateCategory, deleteCategory, syncLocalDataToCloud, exportToCSV, exportToJSON,
     importFromJSON, handleLogout, clearAllData

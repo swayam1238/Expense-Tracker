@@ -6,7 +6,7 @@ import { ChartTypeControl, ExpenseChart } from './ExpenseChart';
 
 export const DashboardView = () => {
   const {
-    expenses, categories, monthlyBudget, currency, expenseChartType, setExpenseChartType,
+    expenses, categories, currency, expenseChartType, setExpenseChartType,
     selectedMonth, setEditingExpense, setIsAddModalOpen, setActiveTab
   } = useApp();
 
@@ -117,11 +117,6 @@ export const DashboardView = () => {
               type={expenseChartType}
               currencySymbol={currency.symbol}
               centerLabel="Total This Month"
-              centerFooter={monthlyBudget > 0
-                ? (totalSpent > monthlyBudget
-                  ? `${currency.symbol}${(totalSpent - monthlyBudget).toLocaleString()} over budget`
-                  : `${currency.symbol}${(monthlyBudget - totalSpent).toLocaleString()} left`)
-                : ''}
             />
             {expenseChartType !== 'bar' && (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'center', marginTop: 14, padding: '0 8px' }}>

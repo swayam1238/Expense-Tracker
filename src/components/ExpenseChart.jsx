@@ -59,7 +59,6 @@ export const ExpenseChart = ({
   type = 'pie',
   currencySymbol = '₹',
   centerLabel = '',
-  centerFooter = '',
   showLegend = false
 }) => {
   const [hoveredId, setHoveredId] = useState(null);
@@ -169,7 +168,6 @@ export const ExpenseChart = ({
           <span className="mono" style={{ fontSize: '1.2rem', fontWeight: 800, marginTop: 2 }}>
             {currencySymbol}{formatAmount(hoveredItem?.value ?? total)}
           </span>
-          {centerFooter && !hoveredItem && <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: 3 }}>{centerFooter}</span>}
         </div>
       </div>
       {showLegend && (
